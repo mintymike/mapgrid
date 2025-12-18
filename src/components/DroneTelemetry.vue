@@ -104,7 +104,7 @@ const useCurrentLocation = () => {
         <span class="toggle-text">Live API Telemetry</span>
       </label>
       <div v-if="useApiTelemetry" class="api-status" :class="{ connected: apiConnected }">
-        {{ apiConnected ? '🟢 Connected' : '🔴 Disconnected' }}
+        {{ apiConnected ? 'Connected' : 'Disconnected' }}
       </div>
     </div>
 

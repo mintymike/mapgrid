@@ -150,15 +150,15 @@ function resetSearch() {
         :disabled="!canStart"
         v-if="!isRunning"
       >
-        ▶ Start Search
+        Start Search
       </button>
 
       <template v-else>
         <button class="btn btn-warning" @click="pauseSearch">
-          {{ isPaused ? '▶ Resume' : '⏸ Pause' }}
+          {{ isPaused ? 'Resume' : 'Pause' }}
         </button>
         <button class="btn btn-danger" @click="stopSearch">
-          ⏹ Stop
+          Stop
         </button>
       </template>
 
@@ -167,16 +167,16 @@ function resetSearch() {
         @click="resetSearch"
         :disabled="isRunning"
       >
-        ↺ Reset
+        Reset
       </button>
     </div>
 
     <!-- Status Info -->
     <div v-if="!mapGridStore.dronePosition" class="warning-box">
-      ⚠️ Set drone position first before starting search
+      Set drone position first before starting search
     </div>
     <div v-else-if="mapGridStore.sectors.length === 0" class="warning-box">
-      ⚠️ Create a grid first before selecting search pattern
+      Create a grid first before selecting search pattern
     </div>
   </div>
 </template>

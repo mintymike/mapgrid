@@ -81,7 +81,7 @@ function getModeColor(mode: string): string {
 
 <template>
   <div class="drone-control">
-    <h2>🚁 Drone Control</h2>
+    <h2>Drone Control</h2>
 
     <!-- Connection Status -->
     <div class="status-bar" :class="{ connected: connected, disconnected: !connected }">
@@ -102,7 +102,7 @@ function getModeColor(mode: string): string {
       <div class="telemetry-item">
         <div class="telemetry-label">Status</div>
         <div class="telemetry-value" :class="{ armed: isArmed, disarmed: !isArmed }">
-          {{ isArmed ? '🔴 ARMED' : '🟢 DISARMED' }}
+          {{ isArmed ? 'ARMED' : 'DISARMED' }}
         </div>
       </div>
 
@@ -125,7 +125,7 @@ function getModeColor(mode: string): string {
 
     <!-- Error Message -->
     <div v-if="lastError" class="error-box">
-      ⚠️ {{ lastError }}
+      {{ lastError }}
     </div>
 
     <!-- Basic Controls -->
@@ -138,14 +138,14 @@ function getModeColor(mode: string): string {
           @click="arm"
           :disabled="executing || isArmed || !isArmable"
         >
-          🔓 Arm
+          Arm
         </button>
         <button
           class="btn btn-secondary"
           @click="disarm"
           :disabled="executing || !isArmed"
         >
-          🔒 Disarm
+          Disarm
         </button>
       </div>
 
@@ -165,7 +165,7 @@ function getModeColor(mode: string): string {
             @click="takeoff"
             :disabled="executing || !isArmed || currentAltitude > 1"
           >
-            🚀 Takeoff
+            Takeoff
           </button>
         </div>
       </div>
@@ -176,14 +176,14 @@ function getModeColor(mode: string): string {
           @click="land"
           :disabled="executing || !isArmed"
         >
-          ⬇️ Land
+          Land
         </button>
         <button
           class="btn btn-info"
           @click="rtl"
           :disabled="executing || !isArmed"
         >
-          🏠 RTL
+          RTL
         </button>
       </div>
     </div>

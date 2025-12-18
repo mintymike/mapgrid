@@ -240,10 +240,10 @@ async function processCommand(command: string) {
 
 <template>
   <div class="voice-command">
-    <h2>🎤 Voice Commands</h2>
+    <h2>Voice Commands</h2>
 
     <div v-if="!supported" class="warning-box">
-      ⚠️ Voice commands not supported in this browser. Try Chrome, Edge, or Safari.
+      Voice commands not supported in this browser. Try Chrome, Edge, or Safari.
     </div>
 
     <div v-else>
@@ -252,7 +252,6 @@ async function processCommand(command: string) {
         class="btn voice-btn"
         :class="{ 'listening': isListening }"
       >
-        <span class="mic-icon">{{ isListening ? '🎤' : '🎙️' }}</span>
         {{ isListening ? 'Listening...' : 'Start Voice Commands' }}
       </button>
 
@@ -274,7 +273,7 @@ async function processCommand(command: string) {
 
       <div class="help-box">
         <details>
-          <summary><strong>📋 Voice Command Examples</strong></summary>
+          <summary><strong>Voice Command Examples</strong></summary>
           <div class="command-categories">
             <div class="command-category">
               <h4>Basic Control</h4>
@@ -317,7 +316,7 @@ async function processCommand(command: string) {
           </div>
 
           <div class="tips">
-            <strong>💡 Tips:</strong>
+            <strong>Tips:</strong>
             <ul>
               <li>Speak clearly and at a normal pace</li>
               <li>Wait for the beep before speaking (browser dependent)</li>
@@ -329,7 +328,7 @@ async function processCommand(command: string) {
       </div>
 
       <div v-if="droneApi.isMockMode()" class="mock-mode-badge">
-        🧪 MOCK MODE - Using simulated drone
+        MOCK MODE - Using simulated drone
       </div>
     </div>
   </div>

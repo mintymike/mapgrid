@@ -93,15 +93,15 @@ async function testConnection() {
     const health = await droneApi.healthCheck()
 
     if (health.status === 'healthy') {
-      connectionTestResult.value = `✅ Connected successfully! Vehicle ${health.vehicle_connected ? 'connected' : 'not connected'}`
+      connectionTestResult.value = `Connected successfully! Vehicle ${health.vehicle_connected ? 'connected' : 'not connected'}`
     } else {
-      connectionTestResult.value = '⚠️ Connection established but status unhealthy'
+      connectionTestResult.value = 'Connection established but status unhealthy'
     }
 
     // Restore mock mode
     droneApi.setMockMode(wasMock)
   } catch (error) {
-    connectionTestResult.value = `❌ Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    connectionTestResult.value = `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`
     droneApi.setMockMode(settings.value.useMockMode)
   } finally {
     testingConnection.value = false
@@ -156,7 +156,7 @@ function importSettings() {
 
 <template>
   <div class="settings">
-    <h2>⚙️ Settings</h2>
+    <h2>Settings</h2>
 
     <!-- Save Message -->
     <div v-if="saveMessage" class="message" :class="`message-${saveMessageType}`">
@@ -165,7 +165,7 @@ function importSettings() {
 
     <!-- API Configuration -->
     <div class="settings-section">
-      <h3>🌐 API Configuration</h3>
+      <h3>API Configuration</h3>
 
       <div class="setting-item">
         <label class="setting-label">
@@ -197,7 +197,7 @@ function importSettings() {
           :disabled="testingConnection || settings.useMockMode"
           class="btn btn-test"
         >
-          {{ testingConnection ? 'Testing...' : '🔌 Test Connection' }}
+          {{ testingConnection ? 'Testing...' : 'Test Connection' }}
         </button>
         <div v-if="connectionTestResult" class="test-result">
           {{ connectionTestResult }}
@@ -225,7 +225,7 @@ function importSettings() {
 
     <!-- Drone Defaults -->
     <div class="settings-section">
-      <h3>🚁 Drone Defaults</h3>
+      <h3>Drone Defaults</h3>
 
       <div class="setting-item">
         <label class="setting-label">Default Takeoff Altitude (m):</label>
@@ -253,7 +253,7 @@ function importSettings() {
 
     <!-- Voice Commands -->
     <div class="settings-section">
-      <h3>🎤 Voice Commands</h3>
+      <h3>Voice Commands</h3>
 
       <div class="setting-item">
         <label class="setting-label">
@@ -285,22 +285,22 @@ function importSettings() {
     <!-- Action Buttons -->
     <div class="settings-actions">
       <button @click="saveSettings" class="btn btn-primary">
-        💾 Save Settings
+        Save Settings
       </button>
       <button @click="resetToDefaults" class="btn btn-secondary">
-        ↺ Reset to Defaults
+        Reset to Defaults
       </button>
     </div>
 
     <!-- Import/Export -->
     <div class="settings-section">
-      <h3>📁 Backup & Restore</h3>
+      <h3>Backup & Restore</h3>
       <div class="backup-actions">
         <button @click="exportSettings" class="btn btn-small">
-          📤 Export Settings
+          Export Settings
         </button>
         <button @click="importSettings" class="btn btn-small">
-          📥 Import Settings
+          Import Settings
         </button>
       </div>
     </div>

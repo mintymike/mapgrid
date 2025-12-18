@@ -1,0 +1,200 @@
+/* Microsoft Fluent UI Design Tokens */
+
+:root {
+  /* Typography */
+  --fluent-font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', sans-serif;
+  --fluent-font-size-base: 14px;
+  --fluent-font-size-small: 12px;
+  --fluent-font-size-large: 16px;
+  --fluent-font-size-xlarge: 20px;
+  --fluent-font-weight-regular: 400;
+  --fluent-font-weight-semibold: 600;
+
+  /* Colors - Neutral Palette */
+  --fluent-grey-10: #faf9f8;
+  --fluent-grey-20: #f3f2f1;
+  --fluent-grey-30: #edebe9;
+  --fluent-grey-40: #e1dfdd;
+  --fluent-grey-50: #d2d0ce;
+  --fluent-grey-60: #c8c6c4;
+  --fluent-grey-70: #a19f9d;
+  --fluent-grey-80: #605e5c;
+  --fluent-grey-90: #484644;
+  --fluent-grey-100: #323130;
+  --fluent-grey-110: #201f1e;
+  --fluent-grey-120: #11100f;
+
+  /* Colors - Primary (Blue) */
+  --fluent-blue-10: #eff6fc;
+  --fluent-blue-20: #deecf9;
+  --fluent-blue-30: #c7e0f4;
+  --fluent-blue-40: #2b88d8;
+  --fluent-blue-50: #0078d4;
+  --fluent-blue-60: #106ebe;
+  --fluent-blue-70: #005a9e;
+  --fluent-blue-80: #004578;
+
+  /* Colors - Semantic */
+  --fluent-success: #107c10;
+  --fluent-success-bg: #dff6dd;
+  --fluent-warning: #ca5010;
+  --fluent-warning-bg: #fff4ce;
+  --fluent-error: #a80000;
+  --fluent-error-bg: #fde7e9;
+  --fluent-info: #0078d4;
+  --fluent-info-bg: #f3f2f1;
+
+  /* Shadows - Fluent Depth System */
+  --fluent-shadow-2: 0 0.3px 0.9px rgba(0, 0, 0, 0.108), 0 1.6px 3.6px rgba(0, 0, 0, 0.132);
+  --fluent-shadow-4: 0 0.6px 1.8px rgba(0, 0, 0, 0.108), 0 3.2px 7.2px rgba(0, 0, 0, 0.132);
+  --fluent-shadow-8: 0 1.2px 3.6px rgba(0, 0, 0, 0.108), 0 6.4px 14.4px rgba(0, 0, 0, 0.132);
+  --fluent-shadow-16: 0 2.4px 7.2px rgba(0, 0, 0, 0.108), 0 12.8px 28.8px rgba(0, 0, 0, 0.132);
+  --fluent-shadow-64: 0 9.6px 28.8px rgba(0, 0, 0, 0.108), 0 51.2px 115.2px rgba(0, 0, 0, 0.132);
+
+  /* Border Radius */
+  --fluent-radius-small: 2px;
+  --fluent-radius-medium: 4px;
+  --fluent-radius-large: 8px;
+
+  /* Spacing */
+  --fluent-spacing-xs: 4px;
+  --fluent-spacing-s: 8px;
+  --fluent-spacing-m: 12px;
+  --fluent-spacing-l: 16px;
+  --fluent-spacing-xl: 20px;
+  --fluent-spacing-xxl: 24px;
+
+  /* Transitions */
+  --fluent-duration-fast: 0.1s;
+  --fluent-duration-normal: 0.2s;
+  --fluent-duration-slow: 0.3s;
+  --fluent-easing: cubic-bezier(0.1, 0.9, 0.2, 1);
+
+  /* Component Heights */
+  --fluent-button-height: 32px;
+  --fluent-input-height: 32px;
+}
+
+/* Fluent Card Component */
+.fluent-card {
+  background: #ffffff;
+  border: 1px solid var(--fluent-grey-30);
+  border-radius: var(--fluent-radius-medium);
+  padding: var(--fluent-spacing-l);
+  box-shadow: var(--fluent-shadow-2);
+  transition: box-shadow var(--fluent-duration-normal) var(--fluent-easing);
+}
+
+.fluent-card:hover {
+  box-shadow: var(--fluent-shadow-4);
+}
+
+/* Fluent Button */
+.fluent-button {
+  font-family: var(--fluent-font-family);
+  font-size: var(--fluent-font-size-base);
+  font-weight: var(--fluent-font-weight-semibold);
+  height: var(--fluent-button-height);
+  padding: 0 var(--fluent-spacing-l);
+  border: 1px solid var(--fluent-grey-60);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-grey-10);
+  color: var(--fluent-grey-110);
+  cursor: pointer;
+  transition: all var(--fluent-duration-fast) var(--fluent-easing);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fluent-spacing-s);
+}
+
+.fluent-button:hover {
+  background: var(--fluent-grey-20);
+  border-color: var(--fluent-grey-70);
+}
+
+.fluent-button:active {
+  background: var(--fluent-grey-30);
+  transform: scale(0.98);
+}
+
+.fluent-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.fluent-button.primary {
+  background: var(--fluent-blue-50);
+  border-color: var(--fluent-blue-50);
+  color: white;
+}
+
+.fluent-button.primary:hover {
+  background: var(--fluent-blue-60);
+  border-color: var(--fluent-blue-60);
+}
+
+.fluent-button.primary:active {
+  background: var(--fluent-blue-70);
+}
+
+/* Fluent Input */
+.fluent-input {
+  font-family: var(--fluent-font-family);
+  font-size: var(--fluent-font-size-base);
+  height: var(--fluent-input-height);
+  padding: 0 var(--fluent-spacing-m);
+  border: 1px solid var(--fluent-grey-60);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-grey-10);
+  color: var(--fluent-grey-110);
+  transition: all var(--fluent-duration-fast) var(--fluent-easing);
+  outline: none;
+}
+
+.fluent-input:hover {
+  border-color: var(--fluent-grey-70);
+}
+
+.fluent-input:focus {
+  border-color: var(--fluent-blue-50);
+  border-width: 2px;
+  padding: 0 11px;
+}
+
+/* Fluent Badge */
+.fluent-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--fluent-spacing-xs) var(--fluent-spacing-s);
+  border-radius: var(--fluent-radius-small);
+  font-size: var(--fluent-font-size-small);
+  font-weight: var(--fluent-font-weight-semibold);
+  background: var(--fluent-grey-30);
+  color: var(--fluent-grey-110);
+}
+
+.fluent-badge.success {
+  background: var(--fluent-success-bg);
+  color: var(--fluent-success);
+}
+
+.fluent-badge.warning {
+  background: var(--fluent-warning-bg);
+  color: var(--fluent-warning);
+}
+
+.fluent-badge.error {
+  background: var(--fluent-error-bg);
+  color: var(--fluent-error);
+}
+
+/* Fluent Section Header */
+.fluent-section-header {
+  font-size: var(--fluent-font-size-large);
+  font-weight: var(--fluent-font-weight-semibold);
+  color: var(--fluent-grey-110);
+  margin: 0 0 var(--fluent-spacing-m) 0;
+  padding-bottom: var(--fluent-spacing-s);
+  border-bottom: 1px solid var(--fluent-grey-30);
+}
