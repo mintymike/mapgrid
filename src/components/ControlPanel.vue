@@ -12,6 +12,34 @@ const totalSectors = computed(() => mapGridStore.totalSectors)
 
 const updateSectorSize = () => { mapGridStore.setSectorSize(selectedSectorSize.value) }
 const clearGrid = () => { mapGridStore.clearGrid() }
+
+function exportGeoJSON() {
+  const sectors = mapGridStore.sectors
+  if (!sectors.length) return
+
+  const features = sectors.map((s) => ({
+    type: 'Feature',
+    properties: { label: s.label, status: s.status || 'unsearched' },
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[
+        [s.bounds.southWest.lng, s.bounds.southWest.lat],
+        [s.bounds.northEast.lng, s.bounds.southWest.lat],
+        [s.bounds.northEast.lng, s.bounds.northEast.lat],
+        [s.bounds.southWest.lng, s.bounds.northEast.lat],
+        [s.bounds.southWest.lng, s.bounds.southWest.lat],
+      ]]
+    }
+  }))
+
+  const geojson = { type: 'FeatureCollection', features }
+  const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `mapgrid-${new Date().toISOString().slice(0, 10)}.geojson`
+  a.click()
+  mapGridStore.log('grid-generated' as any, `Exported ${sectors.length} sectors as GeoJSON`)
+}
 </script>
 
 <template>
@@ -26,6 +54,10 @@ const clearGrid = () => { mapGridStore.clearGrid() }
     </select>
 
     <button @click="clearGrid" class="glass-btn danger" style="width:100%;margin-top:10px">Clear Grid</button>
+
+    <button v-if="totalSectors > 0" @click="exportGeoJSON" class="glass-btn" style="width:100%;margin-top:6px">
+      Export GeoJSON
+    </button>
 
     <div v-if="totalSectors > 0" class="info-section">
       <div class="glass-divider"></div>

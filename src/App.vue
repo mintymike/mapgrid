@@ -8,6 +8,7 @@ import SearchPatterns from './components/SearchPatterns.vue'
 import VoiceCommand from './components/VoiceCommand.vue'
 import DroneControl from './components/DroneControl.vue'
 import Settings from './components/Settings.vue'
+import MissionLog from './components/MissionLog.vue'
 
 const sidebarVisible = ref(true)
 const activeTab = ref('grid')
@@ -79,7 +80,7 @@ const tabs = [
           <div v-if="activeTab === 'grid'" class="tab-panel"><ControlPanel /></div>
           <div v-if="activeTab === 'drone'" class="tab-panel"><DroneControl /><DroneTelemetry /></div>
           <div v-if="activeTab === 'search'" class="tab-panel"><SearchPatterns /></div>
-          <div v-if="activeTab === 'commands'" class="tab-panel"><VoiceCommand /><SectorCommand /></div>
+          <div v-if="activeTab === 'commands'" class="tab-panel"><VoiceCommand /><SectorCommand /><MissionLog /></div>
           <div v-if="activeTab === 'settings'" class="tab-panel"><Settings /></div>
         </div>
       </aside>

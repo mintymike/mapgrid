@@ -19,8 +19,28 @@ let firstCornerMarker: maplibregl.Marker | null = null
 
 const mapGridStore = useMapGridStore()
 
+function handleKeyDown(e: KeyboardEvent) {
+  if (!map) return
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+  if (e.key === 'r' || e.key === 'R') {
+    e.preventDefault()
+    if (rectangleButton) rectangleButton.click()
+  }
+  if (e.key === 'Escape') {
+    if (rectangleMode) {
+      if (rectangleButton) rectangleButton.click()
+    }
+    mapGridStore.selectedSector = null
+  }
+}
+
 onMounted(() => {
   if (!mapContainer.value) return
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', handleKeyDown)
 
   // Initialize MapLibre GL map
   map = new maplibregl.Map({
@@ -124,7 +144,7 @@ onMounted(() => {
       }
     })
 
-    // Sector fill layer
+    // Sector fill layer — color by status
     map!.addLayer({
       id: 'sectors-fill',
       type: 'fill',
@@ -133,18 +153,24 @@ onMounted(() => {
         'fill-color': [
           'case',
           ['get', 'selected'],
-          '#ffff00',  // Yellow for selected/current
-          ['get', 'searched'],
-          '#4a90e2',  // Blue for searched
-          '#00aa00'   // Green for not searched
+          '#ffcc00',
+          ['==', ['get', 'status'], 'clear'],
+          '#4a90e2',
+          ['==', ['get', 'status'], 'target-found'],
+          '#f25c5c',
+          ['==', ['get', 'status'], 'obstructed'],
+          '#f2a93b',
+          ['==', ['get', 'status'], 're-search'],
+          '#a78bfa',
+          '#3ecf8e'
         ],
         'fill-opacity': [
           'case',
           ['get', 'selected'],
-          0.7,    // Very visible for selected
-          ['get', 'searched'],
-          0.4,    // Medium for searched
-          0.15    // Subtle for not searched
+          0.65,
+          ['!=', ['get', 'status'], 'unsearched'],
+          0.45,
+          0.18
         ]
       }
     })
@@ -158,18 +184,24 @@ onMounted(() => {
         'line-color': [
           'case',
           ['get', 'selected'],
-          '#ff0000',  // Red border for selected
-          ['get', 'searched'],
-          '#2e5f8a',  // Dark blue for searched
-          '#00aa00'   // Green for not searched
+          '#ff0000',
+          ['==', ['get', 'status'], 'clear'],
+          '#1e4a6e',
+          ['==', ['get', 'status'], 'target-found'],
+          '#c0392b',
+          ['==', ['get', 'status'], 'obstructed'],
+          '#d68910',
+          ['==', ['get', 'status'], 're-search'],
+          '#7c3aed',
+          '#22a05a'
         ],
         'line-width': [
           'case',
           ['get', 'selected'],
-          4,  // Thick for selected
-          ['get', 'searched'],
-          2,  // Medium for searched
-          1   // Thin for not searched
+          4,
+          ['!=', ['get', 'status'], 'unsearched'],
+          2,
+          1
         ]
       }
     })
@@ -545,10 +577,7 @@ function handleSectorClick(e: any) {
 function updateSectorsLayer(sectors: any[]) {
   if (!map) return
 
-  console.log('Updating sectors layer with', sectors.length, 'sectors')
-
   const selectedLabel = mapGridStore.selectedSector
-  const searchedSectors = mapGridStore.searchedSectors
 
   const features: Feature<Polygon>[] = sectors.map(sector => ({
     type: 'Feature',
@@ -566,12 +595,9 @@ function updateSectorsLayer(sectors: any[]) {
     properties: {
       label: sector.label,
       selected: sector.label === selectedLabel,
-      searched: searchedSectors.has(sector.label)
+      status: mapGridStore.getSectorStatus(sector.label),
     }
   }))
-
-  console.log('Sample feature:', features[0])
-  console.log('Selected sector in updateSectorsLayer:', selectedLabel)
 
   const geojson: FeatureCollection<Polygon> = {
     type: 'FeatureCollection',
@@ -581,7 +607,6 @@ function updateSectorsLayer(sectors: any[]) {
   const source = map.getSource('sectors') as maplibregl.GeoJSONSource
   if (source) {
     source.setData(geojson)
-    console.log('Sectors data updated successfully')
   }
 }
 
@@ -717,6 +742,7 @@ function animateDroneFlight() {
 }
 
 onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeyDown)
   if (animationFrameId) cancelAnimationFrame(animationFrameId)
   if (map) {
     map.remove()

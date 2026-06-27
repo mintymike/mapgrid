@@ -1,613 +1,300 @@
 import { defineStore } from 'pinia'
+import type {
+  Sector, SectorStatus, DronePosition, SearchPatternType,
+  SearchPath, SearchPatternOptions, SearchArea, LatLng,
+  GridDimensions, MissionLogEntry, MissionLogAction,
+} from '@/types'
 
-export interface Sector {
-  label: string
-  bounds: {
-    southWest: { lat: number; lng: number }
-    northEast: { lat: number; lng: number }
-  }
-  center: { lat: number; lng: number }
-}
-
-export interface DronePosition {
-  lat: number
-  lng: number
-  altitude?: number
-  heading?: number
-  speed?: number
-  timestamp?: Date
-}
-
-export type SearchPatternType = 'parallel' | 'expanding-square' | 'contour' | 'sector'
-
-export interface SearchPath {
-  waypoints: { lat: number; lng: number }[]
-  sectors: string[]  // sector labels in visit order
-}
-
-export interface MapGridState {
-  sectors: Sector[]
-  dronePosition: DronePosition | null
-  sectorSizeMeters: number
-  searchArea: { southWest: { lat: number; lng: number }; northEast: { lat: number; lng: number } } | null
-  selectedSector: string | null
-  droneSpeed: number // meters per second
-  isFlying: boolean
-  targetPosition: { lat: number; lng: number } | null
-  searchPath: SearchPath | null
-  searchPatternActive: boolean
-  searchedSectors: Set<string>
-  currentWaypointIndex: number
-}
+let _logId = 0
 
 export const useMapGridStore = defineStore('mapGrid', {
-  state: (): MapGridState => ({
-    sectors: [],
-    dronePosition: null,
-    sectorSizeMeters: 20, // default 20m sectors (prevents creating too many)
-    searchArea: null,
-    selectedSector: null,
-    droneSpeed: 5, // default 5 m/s
+  state: () => ({
+    sectors: [] as Sector[],
+    dronePosition: null as DronePosition | null,
+    sectorSizeMeters: 20,
+    searchArea: null as SearchArea | null,
+    selectedSector: null as string | null,
+    droneSpeed: 5,
     isFlying: false,
-    targetPosition: null,
-    searchPath: null,
+    targetPosition: null as LatLng | null,
+    searchPath: null as SearchPath | null,
     searchPatternActive: false,
     searchedSectors: new Set<string>(),
     currentWaypointIndex: 0,
+    sectorStatuses: {} as Record<string, SectorStatus>,
+    missionLog: [] as MissionLogEntry[],
   }),
 
   getters: {
-    getSectorByLabel: (state) => {
-      return (label: string): Sector | undefined => {
-        return state.sectors.find((s) => s.label === label)
-      }
-    },
+    getSectorByLabel: (state) => (label: string): Sector | undefined =>
+      state.sectors.find((s) => s.label === label),
 
-    totalSectors: (state): number => {
-      return state.sectors.length
-    },
+    totalSectors: (state): number => state.sectors.length,
 
-    gridDimensions: (state): { rows: number; cols: number } | null => {
+    gridDimensions: (state): GridDimensions | null => {
       if (state.sectors.length === 0) return null
-
-      // Extract unique row and column labels
       const rows = new Set<string>()
       const cols = new Set<string>()
-
-      state.sectors.forEach((sector) => {
-        const match = sector.label.match(/^([A-Z]+)(\d+)$/)
-        if (match && match[1] && match[2]) {
-          rows.add(match[1])
-          cols.add(match[2])
-        }
+      state.sectors.forEach((s) => {
+        const m = s.label.match(/^([A-Z]+)(\d+)$/)
+        if (m?.[1] && m?.[2]) { cols.add(m[1]); rows.add(m[2]) }
       })
-
       return { rows: rows.size, cols: cols.size }
     },
+
+    getSectorStatus: (state) => (label: string): SectorStatus =>
+      state.sectorStatuses[label] || 'unsearched',
+
+    recentMissionLog: (state) => state.missionLog.slice(-100),
   },
 
   actions: {
-    // Update drone position from telemetry
-    updateDronePosition(position: DronePosition) {
-      this.dronePosition = {
-        ...position,
-        timestamp: new Date(),
-      }
+    log(action: MissionLogAction, detail: string, data?: Record<string, unknown>) {
+      this.missionLog.push({ id: ++_logId, timestamp: new Date(), action, detail, data })
+      if (this.missionLog.length > 500) this.missionLog.splice(0, this.missionLog.length - 500)
     },
 
-    // Set sector size in meters
+    updateDronePosition(position: DronePosition) {
+      this.dronePosition = { ...position, timestamp: new Date() }
+    },
+
     setSectorSize(sizeMeters: number) {
       this.sectorSizeMeters = sizeMeters
-      // Regenerate grid if search area exists
-      if (this.searchArea) {
-        this.generateGrid(this.searchArea)
-      }
+      if (this.searchArea) this.generateGrid(this.searchArea)
     },
 
-    // Select a sector
     selectSector(label: string) {
       this.selectedSector = label
     },
 
-    // Generate grid sectors from a rectangular search area
-    generateGrid(area: { southWest: { lat: number; lng: number }; northEast: { lat: number; lng: number } }) {
+    setSectorStatus(label: string, status: SectorStatus) {
+      this.sectorStatuses[label] = status
+      const sector = this.getSectorByLabel(label)
+      if (sector) { sector.status = status }
+      this.log('sector-status-changed', `Sector ${label}: ${status}`, { label, status })
+    },
+
+    generateGrid(area: SearchArea) {
       this.searchArea = area
       this.sectors = []
+      this.sectorStatuses = {}
 
       const { southWest, northEast } = area
-      const sectorSizeMeters = this.sectorSizeMeters
+      const s = this.sectorSizeMeters
 
-      // Calculate approximate degrees per meter at this latitude
-      const metersPerDegreeLat = 111320 // approximately constant
+      const metersPerDegreeLat = 111320
       const metersPerDegreeLng = 111320 * Math.cos((southWest.lat * Math.PI) / 180)
 
-      const latDelta = sectorSizeMeters / metersPerDegreeLat
-      const lngDelta = sectorSizeMeters / metersPerDegreeLng
-
-      // Calculate number of rows and columns
-      const totalLatRange = northEast.lat - southWest.lat
-      const totalLngRange = northEast.lng - southWest.lng
-
-      const numRows = Math.ceil(totalLatRange / latDelta)
-      const numCols = Math.ceil(totalLngRange / lngDelta)
+      const latDelta = s / metersPerDegreeLat
+      const lngDelta = s / metersPerDegreeLng
+      const numRows = Math.ceil((northEast.lat - southWest.lat) / latDelta)
+      const numCols = Math.ceil((northEast.lng - southWest.lng) / lngDelta)
       const totalSectors = numRows * numCols
 
-      // Safety limit: prevent creating too many sectors
-      const MAX_SECTORS = 100000 // Increased limit for MapLibre GL (can handle much more)
+      const MAX_SECTORS = 100000
       if (totalSectors > MAX_SECTORS) {
-        alert(`Grid too large!\n\nYour rectangle would create ${totalSectors.toLocaleString()} sectors.\n\nPlease either:\n- Draw a smaller area\n- Increase sector size (currently ${sectorSizeMeters}m)\n\nMaximum allowed: ${MAX_SECTORS.toLocaleString()} sectors`)
+        alert(`Grid too large!\n\n${totalSectors.toLocaleString()} sectors.\nIncrease sector size (currently ${s}m)\n\nMax: ${MAX_SECTORS.toLocaleString()}`)
         return
       }
 
-      // Generate sectors (Excel format: columns=A,B,C, rows=1,2,3)
       const sectors: Sector[] = []
-
       for (let row = 0; row < numRows; row++) {
-        const rowLabel = (row + 1).toString() // Row numbers: 1, 2, 3...
-
+        const rowLabel = (row + 1).toString()
         for (let col = 0; col < numCols; col++) {
-          const colLabel = this.getRowLabel(col) // Column letters: A, B, C...
-
-          // Start from top-left, all sectors have exact same dimensions
-          const sectorNE = {
-            lat: northEast.lat - row * latDelta,
-            lng: southWest.lng + (col + 1) * lngDelta,
-          }
-
-          const sectorSW = {
-            lat: northEast.lat - (row + 1) * latDelta,
-            lng: southWest.lng + col * lngDelta,
-          }
-
-          const center = {
-            lat: (sectorSW.lat + sectorNE.lat) / 2,
-            lng: (sectorSW.lng + sectorNE.lng) / 2,
-          }
-
+          const colLabel = this.getRowLabel(col)
+          const nw = { lat: northEast.lat - row * latDelta, lng: southWest.lng + col * lngDelta }
+          const se = { lat: northEast.lat - (row + 1) * latDelta, lng: southWest.lng + (col + 1) * lngDelta }
+          const center = { lat: (nw.lat + se.lat) / 2, lng: (nw.lng + se.lng) / 2 }
           sectors.push({
-            label: `${colLabel}${rowLabel}`, // Excel format: A1, B1, C1...
-            bounds: {
-              southWest: sectorSW,
-              northEast: sectorNE,
-            },
+            label: `${colLabel}${rowLabel}`,
+            bounds: { southWest: se, northEast: nw },
             center,
+            status: 'unsearched',
           })
         }
       }
 
       this.sectors = sectors
+      this.log('grid-generated', `${totalSectors} sectors, ${s}m cells, ${numRows}x${numCols}`, { totalSectors, sectorSize: s, rows: numRows, cols: numCols })
     },
 
-    // Convert row index to label (0 -> A, 1 -> B, ..., 26 -> AA, etc.)
     getRowLabel(index: number): string {
       let label = ''
       let num = index
-
-      while (num >= 0) {
-        label = String.fromCharCode(65 + (num % 26)) + label
-        num = Math.floor(num / 26) - 1
-      }
-
+      while (num >= 0) { label = String.fromCharCode(65 + (num % 26)) + label; num = Math.floor(num / 26) - 1 }
       return label
     },
 
-    // Clear the grid
     clearGrid() {
       this.sectors = []
       this.searchArea = null
       this.selectedSector = null
+      this.sectorStatuses = {}
+      this.log('grid-cleared', 'Search grid cleared')
     },
 
-    // Get sector at a specific lat/lng position
     getSectorAtPosition(lat: number, lng: number): Sector | undefined {
-      return this.sectors.find((sector) => {
-        const { southWest, northEast } = sector.bounds
-        return (
-          lat >= southWest.lat &&
-          lat <= northEast.lat &&
-          lng >= southWest.lng &&
-          lng <= northEast.lng
-        )
-      })
+      return this.sectors.find((s) =>
+        lat >= s.bounds.southWest.lat && lat <= s.bounds.northEast.lat &&
+        lng >= s.bounds.southWest.lng && lng <= s.bounds.northEast.lng
+      )
     },
 
-    // Command: Fly to sector
-    flyToSector(label: string): { lat: number; lng: number } | null {
+    flyToSector(label: string): LatLng | null {
       const sector = this.getSectorByLabel(label)
-      if (sector) {
-        this.selectedSector = label
-        return sector.center
-      }
+      if (sector) { this.selectedSector = label; return sector.center }
       return null
     },
 
-    // Set drone speed
     setDroneSpeed(speedMps: number) {
       this.droneSpeed = speedMps
     },
 
-    // Set drone position manually (for simulation)
     setDronePosition(lat: number, lng: number) {
-      this.dronePosition = {
-        lat,
-        lng,
-        altitude: this.dronePosition?.altitude || 0,
-        heading: this.dronePosition?.heading || 0,
-        speed: 0,
-        timestamp: new Date(),
-      }
+      this.dronePosition = { lat, lng, altitude: this.dronePosition?.altitude || 0, heading: this.dronePosition?.heading || 0, speed: 0, timestamp: new Date() }
       this.isFlying = false
       this.targetPosition = null
+      this.log('position-set', `Drone position set to ${lat.toFixed(6)}, ${lng.toFixed(6)}`, { lat, lng })
     },
 
-    // Start flying to target position
-    startFlyingTo(target: { lat: number; lng: number }) {
-      this.targetPosition = target
-      this.isFlying = true
-    },
+    startFlyingTo(target: LatLng) { this.targetPosition = target; this.isFlying = true },
+    stopFlying() { this.isFlying = false; this.targetPosition = null },
 
-    // Stop flying
-    stopFlying() {
-      this.isFlying = false
-      this.targetPosition = null
-    },
-
-    // Search Pattern Methods
-    startSearchPattern(
-      pattern: SearchPatternType,
-      options: {
-        direction?: 'horizontal' | 'vertical'
-        center?: string
-        order?: 'row-by-row' | 'column-by-column'
-      }
-    ) {
+    startSearchPattern(pattern: SearchPatternType, options: SearchPatternOptions) {
       this.searchedSectors.clear()
       this.currentWaypointIndex = 0
-
-      // Generate path based on pattern
       this.searchPath = this.generateSearchPath(pattern, options)
       this.searchPatternActive = true
-
-      // Start drone movement along path
-      if (this.searchPath && this.searchPath.waypoints.length > 0) {
-        const firstWaypoint = this.searchPath.waypoints[0]
-        if (firstWaypoint) {
-          this.startFlyingTo(firstWaypoint)
-        }
-      }
+      this.log('search-started', `Pattern: ${pattern}`, { pattern, options })
+      if (this.searchPath?.waypoints[0]) this.startFlyingTo(this.searchPath.waypoints[0])
     },
 
-    generateSearchPath(
-      pattern: SearchPatternType,
-      options: {
-        direction?: 'horizontal' | 'vertical'
-        center?: string
-        order?: 'row-by-row' | 'column-by-column'
-      }
-    ): SearchPath {
-      const waypoints: { lat: number; lng: number }[] = []
-      const sectorLabels: string[] = []
-
+    generateSearchPath(pattern: SearchPatternType, options: SearchPatternOptions): SearchPath {
       switch (pattern) {
-        case 'parallel':
-          return this.generateParallelPath(options.direction || 'horizontal')
-        case 'expanding-square':
-          return this.generateExpandingSquarePath(options.center)
-        case 'contour':
-          return this.generateContourPath()
-        case 'sector':
-          return this.generateSectorPath(options.order || 'row-by-row')
-        default:
-          return { waypoints: [], sectors: [] }
+        case 'parallel': return this.generateParallelPath(options.direction || 'horizontal')
+        case 'expanding-square': return this.generateExpandingSquarePath(options.center)
+        case 'contour': return this.generateContourPath()
+        case 'sector': return this.generateSectorPath(options.order || 'row-by-row')
+        default: return { waypoints: [], sectors: [] }
       }
     },
 
     generateParallelPath(direction: 'horizontal' | 'vertical'): SearchPath {
-      const waypoints: { lat: number; lng: number }[] = []
-      const sectorLabels: string[] = []
-
-      if (direction === 'horizontal') {
-        // Sort sectors by row, then column
-        const sortedSectors = [...this.sectors].sort((a, b) => {
-          const aMatch = a.label.match(/^([A-Z]+)(\d+)$/)
-          const bMatch = b.label.match(/^([A-Z]+)(\d+)$/)
-          if (!aMatch || !bMatch || !aMatch[1] || !aMatch[2] || !bMatch[1] || !bMatch[2]) return 0
-
-          const aRow = parseInt(aMatch[2])
-          const bRow = parseInt(bMatch[2])
-          if (aRow !== bRow) return aRow - bRow
-
-          return aMatch[1].localeCompare(bMatch[1])
-        })
-
-        sortedSectors.forEach((sector) => {
-          waypoints.push(sector.center)
-          sectorLabels.push(sector.label)
-        })
-      } else {
-        // Sort sectors by column, then row
-        const sortedSectors = [...this.sectors].sort((a, b) => {
-          const aMatch = a.label.match(/^([A-Z]+)(\d+)$/)
-          const bMatch = b.label.match(/^([A-Z]+)(\d+)$/)
-          if (!aMatch || !bMatch || !aMatch[1] || !aMatch[2] || !bMatch[1] || !bMatch[2]) return 0
-
-          const colCompare = aMatch[1].localeCompare(bMatch[1])
-          if (colCompare !== 0) return colCompare
-
-          return parseInt(aMatch[2]) - parseInt(bMatch[2])
-        })
-
-        sortedSectors.forEach((sector) => {
-          waypoints.push(sector.center)
-          sectorLabels.push(sector.label)
-        })
-      }
-
-      return { waypoints, sectors: sectorLabels }
+      const sorted = [...this.sectors].sort((a, b) => {
+        const am = a.label.match(/^([A-Z]+)(\d+)$/), bm = b.label.match(/^([A-Z]+)(\d+)$/)
+        if (!am?.[1] || !am?.[2] || !bm?.[1] || !bm?.[2]) return 0
+        return direction === 'horizontal'
+          ? parseInt(am[2]) - parseInt(bm[2]) || am[1].localeCompare(bm[1])
+          : am[1].localeCompare(bm[1]) || parseInt(am[2]) - parseInt(bm[2])
+      })
+      return { waypoints: sorted.map(s => s.center), sectors: sorted.map(s => s.label) }
     },
 
     generateExpandingSquarePath(centerLabel?: string): SearchPath {
-      const waypoints: { lat: number; lng: number }[] = []
-      const sectorLabels: string[] = []
-      const visited = new Set<string>()
-
-      // Find center sector
-      let center: Sector | undefined
-      if (centerLabel) {
-        center = this.getSectorByLabel(centerLabel.toUpperCase())
-      }
-      if (!center && this.sectors.length > 0) {
-        // Use middle sector as center
-        const middleIndex = Math.floor(this.sectors.length / 2)
-        center = this.sectors[middleIndex]
-      }
+      const w: LatLng[] = [], l: string[] = [], visited = new Set<string>()
+      let center = centerLabel ? this.getSectorByLabel(centerLabel.toUpperCase()) : undefined
+      if (!center && this.sectors.length > 0) center = this.sectors[Math.floor(this.sectors.length / 2)]
       if (!center) return { waypoints: [], sectors: [] }
+      w.push(center.center); l.push(center.label); visited.add(center.label)
 
-      // Add center
-      waypoints.push(center.center)
-      sectorLabels.push(center.label)
-      visited.add(center.label)
-
-      // Expand in layers
-      let layer = 1
-      let foundNewSectors = true
-
-      while (foundNewSectors) {
-        foundNewSectors = false
+      let layer = 1, found = true
+      while (found) {
+        found = false
         const layerSectors: Sector[] = []
-
-        // Find all sectors at current distance from center
-        this.sectors.forEach((sector) => {
-          if (visited.has(sector.label)) return
-
-          const centerMatch = center!.label.match(/^([A-Z]+)(\d+)$/)
-          const sectorMatch = sector.label.match(/^([A-Z]+)(\d+)$/)
-          if (!centerMatch || !sectorMatch || !centerMatch[1] || !centerMatch[2] || !sectorMatch[1] || !sectorMatch[2]) return
-
-          const centerCol = this.columnToNumber(centerMatch[1])
-          const centerRow = parseInt(centerMatch[2])
-          const sectorCol = this.columnToNumber(sectorMatch[1])
-          const sectorRow = parseInt(sectorMatch[2])
-
-          const distance = Math.max(Math.abs(sectorCol - centerCol), Math.abs(sectorRow - centerRow))
-
-          if (distance === layer) {
-            layerSectors.push(sector)
-            foundNewSectors = true
-          }
+        this.sectors.forEach((s) => {
+          if (visited.has(s.label)) return
+          const cm = center!.label.match(/^([A-Z]+)(\d+)$/), sm = s.label.match(/^([A-Z]+)(\d+)$/)
+          if (!cm?.[1] || !cm?.[2] || !sm?.[1] || !sm?.[2]) return
+          const distance = Math.max(Math.abs(this.columnToNumber(sm[1]) - this.columnToNumber(cm[1])), Math.abs(parseInt(sm[2]) - parseInt(cm[2])))
+          if (distance === layer) { layerSectors.push(s); found = true }
         })
-
-        // Sort layer sectors clockwise
-        layerSectors.forEach((sector) => {
-          waypoints.push(sector.center)
-          sectorLabels.push(sector.label)
-          visited.add(sector.label)
-        })
-
+        layerSectors.forEach((s) => { w.push(s.center); l.push(s.label); visited.add(s.label) })
         layer++
       }
-
-      return { waypoints, sectors: sectorLabels }
+      return { waypoints: w, sectors: l }
     },
 
     generateContourPath(): SearchPath {
-      // Simplified contour: follow the perimeter, then work inward
-      const waypoints: { lat: number; lng: number }[] = []
-      const sectorLabels: string[] = []
-      const visited = new Set<string>()
-
-      // Get grid dimensions
-      const allCols = new Set<string>()
-      const allRows = new Set<number>()
-      this.sectors.forEach((sector) => {
-        const match = sector.label.match(/^([A-Z]+)(\d+)$/)
-        if (match && match[1] && match[2]) {
-          allCols.add(match[1])
-          allRows.add(parseInt(match[2]))
-        }
+      const w: LatLng[] = [], l: string[] = [], visited = new Set<string>()
+      const allCols = new Set<string>(), allRows = new Set<number>()
+      this.sectors.forEach((s) => {
+        const m = s.label.match(/^([A-Z]+)(\d+)$/)
+        if (m?.[1] && m?.[2]) { allCols.add(m[1]); allRows.add(parseInt(m[2])) }
       })
-
-      const cols = Array.from(allCols).sort()
-      const rows = Array.from(allRows).sort((a, b) => a - b)
-
-      // Trace perimeter first
+      const cols = Array.from(allCols).sort(), rows = Array.from(allRows).sort((a, b) => a - b)
       if (rows.length > 0 && cols.length > 0) {
-        // Top row (left to right)
-        for (const col of cols) {
-          const label = `${col}${rows[0]}`
-          const sector = this.getSectorByLabel(label)
-          if (sector && !visited.has(label)) {
-            waypoints.push(sector.center)
-            sectorLabels.push(label)
-            visited.add(label)
-          }
-        }
-
-        // Right column (top to bottom, excluding corners)
-        for (let i = 1; i < rows.length; i++) {
-          const label = `${cols[cols.length - 1]}${rows[i]}`
-          const sector = this.getSectorByLabel(label)
-          if (sector && !visited.has(label)) {
-            waypoints.push(sector.center)
-            sectorLabels.push(label)
-            visited.add(label)
-          }
-        }
-
-        // Bottom row (right to left, excluding corners)
-        if (rows.length > 1) {
-          for (let i = cols.length - 2; i >= 0; i--) {
-            const label = `${cols[i]}${rows[rows.length - 1]}`
-            const sector = this.getSectorByLabel(label)
-            if (sector && !visited.has(label)) {
-              waypoints.push(sector.center)
-              sectorLabels.push(label)
-              visited.add(label)
-            }
-          }
-        }
-
-        // Left column (bottom to top, excluding corners)
-        if (cols.length > 1) {
-          for (let i = rows.length - 2; i > 0; i--) {
-            const label = `${cols[0]}${rows[i]}`
-            const sector = this.getSectorByLabel(label)
-            if (sector && !visited.has(label)) {
-              waypoints.push(sector.center)
-              sectorLabels.push(label)
-              visited.add(label)
-            }
-          }
-        }
+        for (const col of cols) { const label = `${col}${rows[0]}`; const s = this.getSectorByLabel(label); if (s && !visited.has(label)) { w.push(s.center); l.push(label); visited.add(label) } }
+        for (let i = 1; i < rows.length; i++) { const label = `${cols[cols.length - 1]}${rows[i]}`; const s = this.getSectorByLabel(label); if (s && !visited.has(label)) { w.push(s.center); l.push(label); visited.add(label) } }
+        if (rows.length > 1) for (let i = cols.length - 2; i >= 0; i--) { const label = `${cols[i]}${rows[rows.length - 1]}`; const s = this.getSectorByLabel(label); if (s && !visited.has(label)) { w.push(s.center); l.push(label); visited.add(label) } }
+        if (cols.length > 1) for (let i = rows.length - 2; i > 0; i--) { const label = `${cols[0]}${rows[i]}`; const s = this.getSectorByLabel(label); if (s && !visited.has(label)) { w.push(s.center); l.push(label); visited.add(label) } }
       }
-
-      // Add remaining interior sectors
-      this.sectors.forEach((sector) => {
-        if (!visited.has(sector.label)) {
-          waypoints.push(sector.center)
-          sectorLabels.push(sector.label)
-          visited.add(sector.label)
-        }
-      })
-
-      return { waypoints, sectors: sectorLabels }
+      this.sectors.forEach((s) => { if (!visited.has(s.label)) { w.push(s.center); l.push(s.label) } })
+      return { waypoints: w, sectors: l }
     },
 
     generateSectorPath(order: 'row-by-row' | 'column-by-column'): SearchPath {
-      const waypoints: { lat: number; lng: number }[] = []
-      const sectorLabels: string[] = []
-
-      if (order === 'row-by-row') {
-        // Sort by row number, then column letter
-        const sortedSectors = [...this.sectors].sort((a, b) => {
-          const aMatch = a.label.match(/^([A-Z]+)(\d+)$/)
-          const bMatch = b.label.match(/^([A-Z]+)(\d+)$/)
-          if (!aMatch || !bMatch || !aMatch[1] || !aMatch[2] || !bMatch[1] || !bMatch[2]) return 0
-
-          const aRow = parseInt(aMatch[2])
-          const bRow = parseInt(bMatch[2])
-          if (aRow !== bRow) return aRow - bRow
-
-          return aMatch[1].localeCompare(bMatch[1])
-        })
-
-        sortedSectors.forEach((sector) => {
-          waypoints.push(sector.center)
-          sectorLabels.push(sector.label)
-        })
-      } else {
-        // Sort by column letter, then row number
-        const sortedSectors = [...this.sectors].sort((a, b) => {
-          const aMatch = a.label.match(/^([A-Z]+)(\d+)$/)
-          const bMatch = b.label.match(/^([A-Z]+)(\d+)$/)
-          if (!aMatch || !bMatch || !aMatch[1] || !aMatch[2] || !bMatch[1] || !bMatch[2]) return 0
-
-          const colCompare = aMatch[1].localeCompare(bMatch[1])
-          if (colCompare !== 0) return colCompare
-
-          return parseInt(aMatch[2]) - parseInt(bMatch[2])
-        })
-
-        sortedSectors.forEach((sector) => {
-          waypoints.push(sector.center)
-          sectorLabels.push(sector.label)
-        })
-      }
-
-      return { waypoints, sectors: sectorLabels }
+      const sorted = [...this.sectors].sort((a, b) => {
+        const am = a.label.match(/^([A-Z]+)(\d+)$/), bm = b.label.match(/^([A-Z]+)(\d+)$/)
+        if (!am?.[1] || !am?.[2] || !bm?.[1] || !bm?.[2]) return 0
+        return order === 'row-by-row'
+          ? parseInt(am[2]) - parseInt(bm[2]) || am[1].localeCompare(bm[1])
+          : am[1].localeCompare(bm[1]) || parseInt(am[2]) - parseInt(bm[2])
+      })
+      return { waypoints: sorted.map(s => s.center), sectors: sorted.map(s => s.label) }
     },
 
     columnToNumber(col: string): number {
       let num = 0
-      for (let i = 0; i < col.length; i++) {
-        num = num * 26 + (col.charCodeAt(i) - 64)
-      }
+      for (let i = 0; i < col.length; i++) num = num * 26 + (col.charCodeAt(i) - 64)
       return num
     },
 
     pauseSearchPattern(paused: boolean) {
-      if (paused) {
-        this.stopFlying()
-      } else if (this.searchPath && this.currentWaypointIndex < this.searchPath.waypoints.length) {
-        const waypoint = this.searchPath.waypoints[this.currentWaypointIndex]
-        if (waypoint) {
-          this.startFlyingTo(waypoint)
-        }
+      if (paused) { this.stopFlying(); this.log('search-paused', 'Search paused') }
+      else if (this.searchPath && this.currentWaypointIndex < this.searchPath.waypoints.length) {
+        this.log('search-resumed', 'Search resumed')
+        const wp = this.searchPath.waypoints[this.currentWaypointIndex]
+        if (wp) this.startFlyingTo(wp)
       }
     },
 
     stopSearchPattern() {
-      this.searchPatternActive = false
-      this.stopFlying()
-      this.currentWaypointIndex = 0
+      this.searchPatternActive = false; this.stopFlying(); this.currentWaypointIndex = 0
+      this.log('search-stopped', 'Search stopped')
     },
 
-    clearSearchPath() {
-      this.searchPath = null
-      this.searchedSectors.clear()
-      this.currentWaypointIndex = 0
-    },
+    clearSearchPath() { this.searchPath = null; this.searchedSectors.clear(); this.currentWaypointIndex = 0 },
 
     markSectorAsSearched(label: string) {
       this.searchedSectors.add(label)
+      this.setSectorStatus(label, 'clear')
     },
 
     advanceToNextWaypoint() {
       if (!this.searchPath) return
-
       this.currentWaypointIndex++
       if (this.currentWaypointIndex < this.searchPath.waypoints.length) {
-        // Mark current sector as searched
-        const currentSector = this.searchPath.sectors[this.currentWaypointIndex - 1]
-        if (currentSector) {
-          this.markSectorAsSearched(currentSector)
-        }
-
-        // Move to next waypoint
-        const nextWaypoint = this.searchPath.waypoints[this.currentWaypointIndex]
-        if (nextWaypoint) {
-          this.startFlyingTo(nextWaypoint)
-        }
+        const cs = this.searchPath.sectors[this.currentWaypointIndex - 1]
+        if (cs) this.markSectorAsSearched(cs)
+        const nw = this.searchPath.waypoints[this.currentWaypointIndex]
+        if (nw) this.startFlyingTo(nw)
       } else {
-        // Search complete
         this.stopSearchPattern()
       }
     },
 
-    // Sync drone position from API telemetry (for real drone integration)
     updateFromApiTelemetry(telemetry: {
       position: { lat: number; lng: number; altitude_agl: number }
       attitude: { heading: number }
       velocity: { groundspeed: number }
     }) {
       this.updateDronePosition({
-        lat: telemetry.position.lat,
-        lng: telemetry.position.lng,
-        altitude: telemetry.position.altitude_agl,
-        heading: telemetry.attitude.heading,
-        speed: telemetry.velocity.groundspeed,
-        timestamp: new Date()
+        lat: telemetry.position.lat, lng: telemetry.position.lng,
+        altitude: telemetry.position.altitude_agl, heading: telemetry.attitude.heading,
+        speed: telemetry.velocity.groundspeed, timestamp: new Date()
       })
     },
+
+    clearMissionLog() { this.missionLog = []; _logId = 0 },
   },
 })

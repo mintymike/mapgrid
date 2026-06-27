@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useMapGridStore } from '@/stores/mapGrid'
+import type { SearchPatternType as SearchPattern } from '@/types'
 
 const mapGridStore = useMapGridStore()
-
-export type SearchPattern = 'parallel' | 'expanding-square' | 'contour' | 'sector'
 
 const selectedPattern = ref<SearchPattern>('parallel')
 const isRunning = ref(false)

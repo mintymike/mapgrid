@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useMapGridStore } from '@/stores/mapGrid'
+import type { SectorStatus } from '@/types'
 
 const mapGridStore = useMapGridStore()
 
@@ -11,6 +12,33 @@ const errorMessage = ref('')
 const sectors = computed(() => mapGridStore.sectors)
 const selectedSector = computed(() => mapGridStore.selectedSector)
 const selectedSectorData = computed(() => selectedSector.value ? mapGridStore.getSectorByLabel(selectedSector.value) : null)
+
+const statusOptions: { value: SectorStatus; label: string }[] = [
+  { value: 'unsearched', label: 'Unsearched' },
+  { value: 'clear', label: 'Clear' },
+  { value: 'target-found', label: 'Target Found' },
+  { value: 'obstructed', label: 'Obstructed' },
+  { value: 're-search', label: 'Re-search' },
+]
+
+const currentStatus = computed(() =>
+  selectedSector.value ? mapGridStore.getSectorStatus(selectedSector.value) : 'unsearched'
+)
+
+function setStatus(status: SectorStatus) {
+  if (selectedSector.value) mapGridStore.setSectorStatus(selectedSector.value, status)
+}
+
+function getStatusStyle(status: SectorStatus) {
+  const colors: Record<SectorStatus, string> = {
+    'unsearched': '#3ecf8e',
+    'clear': '#4a90e2',
+    'target-found': '#f25c5c',
+    'obstructed': '#f2a93b',
+    're-search': '#a78bfa',
+  }
+  return { '--chip-accent': colors[status] }
+}
 
 const flyToSector = () => {
   errorMessage.value = ''
@@ -40,6 +68,15 @@ const fmtTime = (t: Date) => t.toLocaleTimeString()
         <div class="cl"><span>Center</span><span class="mono">{{ fmt(selectedSectorData.center.lat) }}&deg;, {{ fmt(selectedSectorData.center.lng) }}&deg;</span></div>
         <div class="cl"><span>SW</span><span class="mono">{{ fmt(selectedSectorData.bounds.southWest.lat) }}&deg;, {{ fmt(selectedSectorData.bounds.southWest.lng) }}&deg;</span></div>
         <div class="cl"><span>NE</span><span class="mono">{{ fmt(selectedSectorData.bounds.northEast.lat) }}&deg;, {{ fmt(selectedSectorData.bounds.northEast.lng) }}&deg;</span></div>
+      </div>
+    </div>
+
+    <div v-if="selectedSector" class="status-section">
+      <div class="micro-label">Sector Status</div>
+      <div class="status-chips">
+        <button v-for="opt in statusOptions" :key="opt.value" class="status-chip" :class="{ on: currentStatus === opt.value }" @click="setStatus(opt.value)" :style="getStatusStyle(opt.value)">
+          {{ opt.label }}
+        </button>
       </div>
     </div>
 
@@ -78,6 +115,22 @@ const fmtTime = (t: Date) => t.toLocaleTimeString()
 .cl { display: flex; gap: 10px; font-size: 10px; }
 .cl span:first-child { color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; min-width: 32px; }
 .mono { font-family: var(--font-mono); color: var(--color-text-primary); font-size: 10px; }
+
+.status-section { margin-bottom: 10px; }
+.micro-label { font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.status-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.status-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--color-glass-border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 10px; font-weight: 500; cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-family);
+}
+.status-chip:hover { background: var(--layer-bg-1); }
+.status-chip.on { border-color: var(--chip-accent); background: color-mix(in srgb, var(--chip-accent) 12%, transparent); color: var(--chip-accent); font-weight: 600; }
 
 .input-pair { display: flex; gap: 6px; margin-bottom: 4px; }
 .input-upper { text-transform: uppercase; flex: 1; }

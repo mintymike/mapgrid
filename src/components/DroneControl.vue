@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { droneApi } from '@/services/droneApi'
-import type { Telemetry } from '@/services/droneApi'
+import { useMapGridStore } from '@/stores/mapGrid'
+import type { Telemetry } from '@/types'
+
+const mapGridStore = useMapGridStore()
 
 const telemetry = ref<Telemetry | null>(null)
 const connected = ref(false)
 const executing = ref(false)
+const executingLabel = ref('')
 const lastError = ref('')
 const takeoffAltitude = ref(10)
 const targetSpeed = ref(5)
@@ -21,17 +25,28 @@ const currentMode = computed(() => telemetry.value?.status.mode ?? 'UNKNOWN')
 const batteryLevel = computed(() => telemetry.value?.battery.level ?? 0)
 const currentAltitude = computed(() => telemetry.value?.position.altitude_agl ?? 0)
 
-async function exec(fn: () => Promise<any>, name: string) {
-  executing.value = true; lastError.value = ''
-  try { await fn() } catch (e) { lastError.value = `${name}: ${e instanceof Error ? e.message : 'Error'}` }
-  finally { executing.value = false }
+function confirm(msg: string): boolean {
+  return window.confirm(msg)
 }
-function arm() { exec(() => droneApi.arm(), 'Arm') }
-function disarm() { exec(() => droneApi.disarm(), 'Disarm') }
-function takeoff() { exec(() => droneApi.takeoff(takeoffAltitude.value), 'Takeoff') }
-function land() { exec(() => droneApi.land(), 'Land') }
-function rtl() { exec(() => droneApi.returnToLaunch(), 'RTL') }
-function setSpeed() { exec(() => droneApi.setSpeed(targetSpeed.value), 'Speed') }
+
+async function exec(fn: () => Promise<any>, name: string, logAction: string) {
+  executing.value = true; executingLabel.value = name; lastError.value = ''
+  try {
+    await fn()
+    mapGridStore.log(logAction as any, name)
+  } catch (e) {
+    lastError.value = `${name}: ${e instanceof Error ? e.message : 'Error'}`
+  } finally { executing.value = false; executingLabel.value = '' }
+}
+
+function arm() { if (confirm('Arm the drone?')) exec(() => droneApi.arm(), 'Arming', 'arm') }
+function disarm() { if (confirm('Disarm the drone?')) exec(() => droneApi.disarm(), 'Disarming', 'disarm') }
+function takeoff() {
+  if (confirm(`Take off to ${takeoffAltitude.value}m?`)) exec(() => droneApi.takeoff(takeoffAltitude.value), 'Takeoff', 'takeoff')
+}
+function land() { if (confirm('Land the drone? This will end the flight.')) exec(() => droneApi.land(), 'Landing', 'land') }
+function rtl() { if (confirm('Return to launch? Drone will fly home.')) exec(() => droneApi.returnToLaunch(), 'RTL', 'rtl') }
+function setSpeed() { exec(() => droneApi.setSpeed(targetSpeed.value), 'Set Speed', 'set-speed') }
 
 function battColor(l: number): string {
   if (l > 60) return 'var(--color-success)'
@@ -48,6 +63,7 @@ function battColor(l: number): string {
       <span class="status-dot"></span>
       {{ connected ? 'Connected' : 'Disconnected' }}
       <span v-if="droneApi.isMockMode()" class="mock-pill">MOCK</span>
+      <span v-if="executing" class="exec-pill">&#9704; {{ executingLabel }}</span>
     </div>
 
     <div v-if="telemetry" class="telem-grid">
@@ -64,16 +80,26 @@ function battColor(l: number): string {
     <div class="section">
       <div class="section-label">Commands</div>
       <div class="btn-pair">
-        <button class="glass-btn warning" @click="arm" :disabled="executing || isArmed || !isArmable">Arm</button>
-        <button class="glass-btn" @click="disarm" :disabled="executing || !isArmed">Disarm</button>
+        <button class="glass-btn warning" @click="arm" :disabled="executing || isArmed || !isArmable">
+          <span class="btn-spin" v-if="executing && executingLabel === 'Arming'"></span>Arm
+        </button>
+        <button class="glass-btn" @click="disarm" :disabled="executing || !isArmed">
+          <span class="btn-spin" v-if="executing && executingLabel === 'Disarming'"></span>Disarm
+        </button>
       </div>
       <div class="btn-pair">
         <input type="number" v-model.number="takeoffAltitude" min="2" max="100" class="glass-input" :disabled="executing" style="flex:0 0 72px" placeholder="Alt" />
-        <button class="glass-btn success" @click="takeoff" :disabled="executing || !isArmed || currentAltitude > 1" style="flex:1">Takeoff</button>
+        <button class="glass-btn success" @click="takeoff" :disabled="executing || !isArmed || currentAltitude > 1" style="flex:1">
+          <span class="btn-spin" v-if="executing && executingLabel === 'Takeoff'"></span>Takeoff
+        </button>
       </div>
       <div class="btn-pair">
-        <button class="glass-btn danger" @click="land" :disabled="executing || !isArmed">Land</button>
-        <button class="glass-btn" @click="rtl" :disabled="executing || !isArmed">RTL</button>
+        <button class="glass-btn danger" @click="land" :disabled="executing || !isArmed">
+          <span class="btn-spin" v-if="executing && executingLabel === 'Landing'"></span>Land
+        </button>
+        <button class="glass-btn" @click="rtl" :disabled="executing || !isArmed">
+          <span class="btn-spin" v-if="executing && executingLabel === 'RTL'"></span>RTL
+        </button>
       </div>
     </div>
 
@@ -99,27 +125,20 @@ function battColor(l: number): string {
 </template>
 
 <style scoped>
-.status-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-radius: var(--radius-md);
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 10px;
-  letter-spacing: -0.01em;
-}
+.status-line { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: var(--radius-md); font-size: 12px; font-weight: 600; margin-bottom: 10px; letter-spacing: -0.01em; }
 .status-line.ok { background: var(--color-success-bg); color: var(--color-success); border: 1px solid var(--color-success-border); }
 .status-line.err { background: var(--color-danger-bg); color: var(--color-danger); border: 1px solid var(--color-danger-border); }
-
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: blink 2s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
+.mock-pill { margin-left: auto; font-size: 9px; padding: 1px 6px; border-radius: var(--radius-xs); background: var(--layer-bg-2); letter-spacing: 0.05em; }
+.exec-pill { margin-left: auto; font-size: 10px; padding: 1px 8px; border-radius: var(--radius-xs); background: var(--color-accent-bg); color: var(--color-accent); letter-spacing: 0.03em; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
 
-.mock-pill { margin-left: auto; font-size: 9px; padding: 1px 6px; border-radius: var(--radius-xs); background: var(--layer-bg-4); letter-spacing: 0.05em; }
+.btn-spin { display: inline-block; width: 10px; height: 10px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .telem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
-.tcell { padding: 9px 11px; background: var(--layer-bg-0); border: 1px solid var(--layer-bg-1); border-radius: var(--radius-sm); }
+.tcell { padding: 9px 11px; background: var(--layer-bg-0); border: 1px solid var(--layer-border-0); border-radius: var(--radius-sm); }
 .tcell.wide { grid-column: span 2; }
 .tcell-label { font-size: 10px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 3px; }
 .tcell-value { font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
@@ -127,7 +146,7 @@ function battColor(l: number): string {
 .tcell-value.danger { color: var(--color-danger); }
 .tcell-value.ok { color: var(--color-success); }
 
-.batt { position: relative; height: 20px; background: var(--layer-bg-2); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.batt { position: relative; height: 20px; background: var(--layer-bg-1); border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .batt-fill { position: absolute; height: 100%; border-radius: 3px; transition: width 0.5s ease; }
 .batt-pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--color-text-primary); }
 
@@ -135,13 +154,12 @@ function battColor(l: number): string {
 
 .section { margin-top: 8px; }
 .section-label { font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
-
 .btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
 
 .slider-row { display: flex; align-items: center; gap: 10px; }
 .range-slider { flex: 1; height: 4px; -webkit-appearance: none; background: var(--layer-bg-3); border-radius: 2px; outline: none; }
-.range-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--color-accent); cursor: pointer; border: 2px solid #141416; box-shadow: 0 0 8px rgba(107,159,255,0.3); }
-.range-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--color-accent); cursor: pointer; border: 2px solid #141416; }
+.range-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--color-accent); cursor: pointer; border: 2px solid var(--color-bg); box-shadow: 0 0 8px rgba(107,159,255,0.3); }
+.range-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--color-accent); cursor: pointer; border: 2px solid var(--color-bg); }
 .slider-val { font-size: 12px; font-weight: 600; color: var(--color-text-primary); min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
 
 .gps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }

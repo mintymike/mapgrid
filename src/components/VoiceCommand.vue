@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useMapGridStore } from '@/stores/mapGrid'
 import { droneApi } from '@/services/droneApi'
-import type { SearchPatternType } from '@/stores/mapGrid'
+import type { SearchPatternType } from '@/types'
 
 const mapGridStore = useMapGridStore()
 
