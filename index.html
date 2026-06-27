@@ -5,6 +5,9 @@
     <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MapGrid - Drone Search Area Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
       * {
         margin: 0;
@@ -13,9 +16,11 @@
       }
 
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+        background: var(--color-bg);
+        color: var(--color-text-primary);
       }
 
       #app {
@@ -26,6 +31,15 @@
     </style>
   </head>
   <body>
+    <script>
+      (function() {
+        var stored = localStorage.getItem('mapgrid-theme');
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = stored || (prefersDark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+        if (!stored) localStorage.setItem('mapgrid-theme', theme);
+      })();
+    </script>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

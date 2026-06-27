@@ -17,520 +17,134 @@ const statusType = ref<'success' | 'error' | 'info'>('info')
 let recognition: any = null
 
 onMounted(() => {
-  // Check for Web Speech API support
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-
-  if (SpeechRecognition) {
-    supported.value = true
-    recognition = new SpeechRecognition()
-
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = 'en-US'
-
-    recognition.onresult = (event: any) => {
-      const last = event.results.length - 1
-      const text = event.results[last][0].transcript.trim().toLowerCase()
-      const conf = event.results[last][0].confidence
-
-      transcript.value = text
-      confidence.value = conf
-
-      if (event.results[last].isFinal && conf > 0.6) {
-        processCommand(text)
-      }
-    }
-
-    recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error)
-      if (event.error === 'no-speech') {
-        showStatus('No speech detected. Try again.', 'info')
-      } else if (event.error === 'not-allowed') {
-        showStatus('Microphone access denied. Please enable microphone permissions.', 'error')
-        isListening.value = false
-      } else {
-        showStatus(`Speech recognition error: ${event.error}`, 'error')
-      }
-    }
-
-    recognition.onend = () => {
-      if (isListening.value) {
-        // Restart if still supposed to be listening
-        try {
-          recognition.start()
-        } catch (e) {
-          console.error('Failed to restart recognition:', e)
-          isListening.value = false
-        }
-      }
-    }
+  const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  if (!SR) return
+  supported.value = true
+  recognition = new SR()
+  recognition.continuous = true; recognition.interimResults = true; recognition.lang = 'en-US'
+  recognition.onresult = (e: any) => {
+    const last = e.results.length - 1
+    const text = e.results[last][0].transcript.trim().toLowerCase()
+    transcript.value = text; confidence.value = e.results[last][0].confidence
+    if (e.results[last].isFinal && e.results[last][0].confidence > 0.6) processCommand(text)
   }
+  recognition.onerror = (e: any) => {
+    if (e.error === 'no-speech') showStatus('No speech', 'info')
+    else if (e.error === 'not-allowed') { showStatus('Mic denied', 'error'); isListening.value = false }
+    else showStatus(`Error: ${e.error}`, 'error')
+  }
+  recognition.onend = () => { if (isListening.value) try { recognition.start() } catch(e) { isListening.value = false } }
 })
 
-onUnmounted(() => {
-  if (recognition) {
-    recognition.stop()
-  }
-})
+onUnmounted(() => { if (recognition) recognition.stop() })
 
 function toggleListening() {
   if (!recognition) return
-
-  if (isListening.value) {
-    recognition.stop()
-    isListening.value = false
-    showStatus('Voice commands stopped', 'info')
-  } else {
-    try {
-      recognition.start()
-      isListening.value = true
-      showStatus('Listening for commands...', 'info')
-    } catch (e) {
-      console.error('Failed to start recognition:', e)
-      showStatus('Failed to start voice recognition', 'error')
-    }
-  }
+  if (isListening.value) { recognition.stop(); isListening.value = false; showStatus('Stopped', 'info') }
+  else { try { recognition.start(); isListening.value = true; showStatus('Listening...', 'info') } catch(e) { showStatus('Failed', 'error') } }
 }
 
-function showStatus(message: string, type: 'success' | 'error' | 'info') {
-  statusMessage.value = message
-  statusType.value = type
-  setTimeout(() => {
-    statusMessage.value = ''
-  }, 5000)
-}
+function showStatus(msg: string, type: 'success'|'error'|'info') { statusMessage.value = msg; statusType.value = type; setTimeout(() => statusMessage.value = '', 4000) }
 
-async function processCommand(command: string) {
-  lastCommand.value = command
-  console.log('Processing command:', command)
-
+async function processCommand(cmd: string) {
+  lastCommand.value = cmd
   try {
-    // Arm/Disarm
-    if (command.match(/\b(arm|armed)\b/) && !command.includes('disarm')) {
-      await droneApi.arm()
-      showStatus('Drone armed successfully', 'success')
-      return
+    if (cmd.match(/\b(arm|armed)\b/) && !cmd.includes('disarm')) { await droneApi.arm(); showStatus('Armed', 'success'); return }
+    if (cmd.includes('disarm')) { await droneApi.disarm(); showStatus('Disarmed', 'success'); return }
+    if (cmd.match(/\b(takeoff|take off|lift off|liftoff)\b/)) { const m=cmd.match(/(\d+)\s*(meter|metre|foot|feet|m)/i); const a=m && m[1] ? parseInt(m[1]) : 10; await droneApi.takeoff(a); showStatus(`Takeoff ${a}m`,'success'); return }
+    if (cmd.match(/\b(land|landing)\b/)) { await droneApi.land(); showStatus('Landing','success'); return }
+    if (cmd.match(/\b(return|rtl|come back|go home)\b/)) { await droneApi.returnToLaunch(); showStatus('RTL','success'); return }
+    const sm = cmd.match(/(?:go to|fly to|navigate to|sector)\s+(?:sector\s+)?([a-z]+\d+)/i)
+    if (sm && sm[1]) { const l=sm[1].toUpperCase(); const s=mapGridStore.getSectorByLabel(l); if(s){await droneApi.gotoPosition(s.center.lat,s.center.lng);mapGridStore.selectSector(l);showStatus(`Sector ${l}`,'success')}else{showStatus(`${l} not found`,'error')}; return }
+    const sp = cmd.match(/(?:set speed|speed)\s+(?:to\s+)?(\d+)/i)
+    if (sp && sp[1]) { const s=parseInt(sp[1]); if(s>0&&s<=20){await droneApi.setSpeed(s);mapGridStore.setDroneSpeed(s);showStatus(`Speed ${s} m/s`,'success')}else{showStatus('1-20 m/s','error')}; return }
+    if (cmd.match(/\b(start|begin|commence)\s+(search|pattern)/i)) {
+      let p: SearchPatternType='parallel';let pn='parallel'
+      if(cmd.includes('parallel')||cmd.includes('track')){p='parallel';pn='parallel'}
+      else if(cmd.includes('expanding')||cmd.includes('square')){p='expanding-square';pn='expanding square'}
+      else if(cmd.includes('contour')){p='contour';pn='contour'}
+      else if(cmd.includes('sector')){p='sector';pn='sector'}
+      if(mapGridStore.sectors.length===0){showStatus('Create grid first','error');return}
+      mapGridStore.startSearchPattern(p,{direction:'horizontal',order:'row-by-row'});showStatus(`Search:${pn}`,'success');return
     }
-    if (command.includes('disarm')) {
-      await droneApi.disarm()
-      showStatus('Drone disarmed', 'success')
-      return
-    }
-
-    // Takeoff
-    if (command.match(/\b(takeoff|take off|lift off|liftoff)\b/)) {
-      const altMatch = command.match(/(\d+)\s*(meter|metre|foot|feet|m)/i)
-      const altitude = altMatch && altMatch[1] ? parseInt(altMatch[1]) : 10
-      await droneApi.takeoff(altitude)
-      showStatus(`Taking off to ${altitude} meters`, 'success')
-      return
-    }
-
-    // Land
-    if (command.match(/\b(land|landing)\b/)) {
-      await droneApi.land()
-      showStatus('Landing drone', 'success')
-      return
-    }
-
-    // Return to launch
-    if (command.match(/\b(return|rtl|come back|go home)\b/)) {
-      await droneApi.returnToLaunch()
-      showStatus('Returning to launch', 'success')
-      return
-    }
-
-    // Go to sector (e.g., "go to sector A5", "fly to B3", "navigate to C12")
-    const sectorMatch = command.match(/(?:go to|fly to|navigate to|sector)\s+(?:sector\s+)?([a-z]+\d+)/i)
-    if (sectorMatch && sectorMatch[1]) {
-      const sectorLabel = sectorMatch[1].toUpperCase()
-      const sector = mapGridStore.getSectorByLabel(sectorLabel)
-      if (sector) {
-        await droneApi.gotoPosition(sector.center.lat, sector.center.lng)
-        mapGridStore.selectSector(sectorLabel)
-        showStatus(`Flying to sector ${sectorLabel}`, 'success')
-      } else {
-        showStatus(`Sector ${sectorLabel} not found`, 'error')
-      }
-      return
-    }
-
-    // Set speed (e.g., "set speed to 5", "speed 8 meters per second")
-    const speedMatch = command.match(/(?:set speed|speed)\s+(?:to\s+)?(\d+)/i)
-    if (speedMatch && speedMatch[1]) {
-      const speed = parseInt(speedMatch[1])
-      if (speed > 0 && speed <= 20) {
-        await droneApi.setSpeed(speed)
-        mapGridStore.setDroneSpeed(speed)
-        showStatus(`Speed set to ${speed} m/s`, 'success')
-      } else {
-        showStatus('Speed must be between 1 and 20 m/s', 'error')
-      }
-      return
-    }
-
-    // Start search pattern
-    if (command.match(/\b(start|begin|commence)\s+(search|pattern)/i)) {
-      let pattern: SearchPatternType = 'parallel'
-      let patternName = 'parallel'
-
-      if (command.includes('parallel') || command.includes('track')) {
-        pattern = 'parallel'
-        patternName = 'parallel track'
-      } else if (command.includes('expanding') || command.includes('square')) {
-        pattern = 'expanding-square'
-        patternName = 'expanding square'
-      } else if (command.includes('contour')) {
-        pattern = 'contour'
-        patternName = 'contour'
-      } else if (command.includes('sector')) {
-        pattern = 'sector'
-        patternName = 'sector'
-      }
-
-      if (mapGridStore.sectors.length === 0) {
-        showStatus('Please create a grid first', 'error')
-        return
-      }
-
-      mapGridStore.startSearchPattern(pattern, {
-        direction: 'horizontal',
-        order: 'row-by-row'
-      })
-      showStatus(`Starting ${patternName} search`, 'success')
-      return
-    }
-
-    // Stop search
-    if (command.match(/\b(stop|halt|pause)\s+(search|pattern)/i)) {
-      mapGridStore.stopSearchPattern()
-      showStatus('Search stopped', 'success')
-      return
-    }
-
-    // Clear grid
-    if (command.match(/\b(clear|delete|remove)\s+(grid|sectors)/i)) {
-      mapGridStore.clearGrid()
-      showStatus('Grid cleared', 'success')
-      return
-    }
-
-    // Status report
-    if (command.match(/\b(status|report|info|information)\b/)) {
-      const telemetry = await droneApi.getTelemetry()
-      const batteryLevel = telemetry?.battery?.level ?? 0
-      const altitude = telemetry?.position?.altitude_agl ?? 0
-      const msg = `Drone is ${telemetry.status.armed ? 'armed' : 'disarmed'}, ` +
-                  `mode: ${telemetry.status.mode}, ` +
-                  `battery: ${batteryLevel.toFixed(0)}%, ` +
-                  `altitude: ${altitude.toFixed(1)} meters`
-      showStatus(msg, 'info')
-      return
-    }
-
-    // If no command matched
-    showStatus(`Command not recognized: "${command}"`, 'error')
-    console.log('Command not recognized:', command)
-  } catch (error) {
-    console.error('Command execution error:', error)
-    showStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
-  }
+    if (cmd.match(/\b(stop|halt|pause)\s+(search|pattern)/i)) { mapGridStore.stopSearchPattern(); showStatus('Stopped','success'); return }
+    if (cmd.match(/\b(clear|delete|remove)\s+(grid|sectors)/i)) { mapGridStore.clearGrid(); showStatus('Cleared','success'); return }
+    if (cmd.match(/\b(status|report|info|information)\b/)) { const t=await droneApi.getTelemetry(); showStatus(`${t.status.armed?'Armed':'Disarmed'}, ${t.status.mode}, bat:${t.battery.level.toFixed(0)}%, alt:${t.position.altitude_agl.toFixed(1)}m`,'info'); return }
+    showStatus(`Unknown: "${cmd}"`,'error')
+  } catch(e) { showStatus(`Error: ${e instanceof Error?e.message:'Unknown'}`,'error') }
 }
 </script>
 
 <template>
-  <div class="voice-command">
-    <h2>Voice Commands</h2>
+  <div class="glass-card" style="padding:16px">
+    <div class="glass-section-header">Voice Commands</div>
 
-    <div v-if="!supported" class="warning-box">
-      Voice commands not supported in this browser. Try Chrome, Edge, or Safari.
-    </div>
+    <div v-if="!supported" class="warn-msg">Voice not supported. Use Chrome, Edge, or Safari.</div>
 
-    <div v-else>
-      <button
-        @click="toggleListening"
-        class="btn voice-btn"
-        :class="{ 'listening': isListening }"
-      >
-        {{ isListening ? 'Listening...' : 'Start Voice Commands' }}
+    <template v-else>
+      <button @click="toggleListening" class="voice-btn" :class="{on:isListening}">
+        <span class="mic-icon">{{ isListening ? 'Ă˘ĹˇÂ«' : 'Ä‘ĹşĹ˝Â¤' }}</span>
+        {{ isListening ? 'Listening...' : 'Start Voice' }}
       </button>
 
       <div v-if="transcript && isListening" class="transcript-box">
-        <div class="transcript-label">Hearing:</div>
-        <div class="transcript-text">{{ transcript }}</div>
-        <span class="confidence" v-if="confidence > 0">
-          Confidence: {{ (confidence * 100).toFixed(0) }}%
-        </span>
+        <div class="tx-label">Hearing</div>
+        <div class="tx-text">{{ transcript }}</div>
+        <span v-if="confidence>0" class="tx-conf">{{ (confidence*100).toFixed(0) }}%</span>
       </div>
 
-      <div v-if="lastCommand" class="last-command">
-        <strong>Last Command:</strong> "{{ lastCommand }}"
-      </div>
+      <div v-if="lastCommand" class="last-cmd">"{{ lastCommand }}"</div>
 
-      <div v-if="statusMessage" class="status-message" :class="`status-${statusType}`">
-        {{ statusMessage }}
-      </div>
+      <div v-if="statusMessage" class="status-toast" :class="statusType">{{ statusMessage }}</div>
 
-      <div class="help-box">
-        <details>
-          <summary><strong>Voice Command Examples</strong></summary>
-          <div class="command-categories">
-            <div class="command-category">
-              <h4>Basic Control</h4>
-              <ul>
-                <li>"Arm"</li>
-                <li>"Disarm"</li>
-                <li>"Takeoff" / "Takeoff to 15 meters"</li>
-                <li>"Land"</li>
-                <li>"Return to launch" / "Go home"</li>
-              </ul>
-            </div>
-
-            <div class="command-category">
-              <h4>Navigation</h4>
-              <ul>
-                <li>"Go to sector A5"</li>
-                <li>"Fly to B3"</li>
-                <li>"Navigate to C12"</li>
-                <li>"Set speed to 8"</li>
-              </ul>
-            </div>
-
-            <div class="command-category">
-              <h4>Search Patterns</h4>
-              <ul>
-                <li>"Start parallel search"</li>
-                <li>"Begin expanding square search"</li>
-                <li>"Start contour search"</li>
-                <li>"Stop search"</li>
-              </ul>
-            </div>
-
-            <div class="command-category">
-              <h4>Information</h4>
-              <ul>
-                <li>"Status report"</li>
-                <li>"Clear grid"</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="tips">
-            <strong>Tips:</strong>
-            <ul>
-              <li>Speak clearly and at a normal pace</li>
-              <li>Wait for the beep before speaking (browser dependent)</li>
-              <li>Commands work best in a quiet environment</li>
-              <li>You can say "uh" or pause - the final command is what matters</li>
-            </ul>
-          </div>
-        </details>
-      </div>
-
-      <div v-if="droneApi.isMockMode()" class="mock-mode-badge">
-        MOCK MODE - Using simulated drone
-      </div>
-    </div>
+      <details class="help-toggle">
+        <summary>Available commands</summary>
+        <div class="help-grid">
+          <div><div class="help-head">Basic</div><ul><li>Arm / Disarm</li><li>Takeoff</li><li>Land</li><li>Go home</li></ul></div>
+          <div><div class="help-head">Navigate</div><ul><li>Go to sector A5</li><li>Fly to B3</li><li>Set speed to 8</li></ul></div>
+          <div><div class="help-head">Search</div><ul><li>Start parallel search</li><li>Begin expanding square</li><li>Stop search</li></ul></div>
+          <div><div class="help-head">Info</div><ul><li>Status report</li><li>Clear grid</li></ul></div>
+        </div>
+      </details>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.voice-command {
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-h2 {
-  margin-top: 0;
-  margin-bottom: 20px;
-  font-size: 1.2em;
-  color: #333;
-}
-
 .voice-btn {
-  padding: 14px 24px;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-  font-size: 1em;
-  width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 11px;
+  border: 1px solid var(--layer-bg-3);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: var(--font-family); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all var(--transition-fast); letter-spacing: -0.01em;
 }
+.voice-btn:hover { background: var(--layer-bg-2); color: var(--color-text-primary); }
+.voice-btn.on { background: var(--color-danger-bg); border-color: var(--color-danger-border); color: var(--color-danger); animation: pulse-border 1.5s infinite; }
+@keyframes pulse-border { 0%,100%{opacity:1} 50%{opacity:0.65} }
+.mic-icon { font-size: 14px; }
 
-.voice-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
+.transcript-box { padding: 9px 12px; margin-top: 8px; background: var(--layer-bg-0); border: 1px solid var(--layer-bg-2); border-radius: var(--radius-md); }
+.tx-label { font-size: 9px; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
+.tx-text { font-size: 13px; color: var(--color-text-primary); font-weight: 500; }
+.tx-conf { font-size: 9px; color: var(--color-text-tertiary); }
 
-.voice-btn.listening {
-  background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
-  animation: pulse 1.5s infinite;
-}
+.last-cmd { padding: 7px 12px; margin-top: 6px; background: var(--layer-bg-0); border-radius: var(--radius-sm); font-size: 11px; color: var(--color-text-secondary); }
 
-.mic-icon {
-  font-size: 1.3em;
-}
+.status-toast { padding: 7px 12px; margin-top: 6px; border-radius: var(--radius-md); font-size: 11px; font-weight: 500; }
+.status-toast.success { background: var(--color-success-bg); color: var(--color-success); border: 1px solid var(--color-success-border); }
+.status-toast.error { background: var(--color-danger-bg); color: var(--color-danger); border: 1px solid var(--color-danger-border); }
+.status-toast.info { background: var(--color-info-bg); color: var(--color-info); border: 1px solid rgba(94,163,240,0.2); }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.8; transform: scale(1.05); }
-}
+.help-toggle { margin-top: 10px; font-size: 11px; }
+.help-toggle summary { color: var(--color-text-tertiary); cursor: pointer; padding: 3px 0; }
+.help-toggle summary:hover { color: var(--color-accent); }
+.help-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; padding: 8px; background: var(--layer-bg-0); border-radius: var(--radius-sm); }
+.help-head { font-size: 10px; font-weight: 600; color: var(--color-accent); margin-bottom: 2px; }
+.help-grid ul { margin: 0; padding-left: 14px; }
+.help-grid li { color: var(--color-text-tertiary); font-size: 10px; margin: 1px 0; }
 
-.transcript-box {
-  margin-top: 15px;
-  padding: 12px;
-  background: #f0f7ff;
-  border-left: 4px solid #2196f3;
-  border-radius: 6px;
-  animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.transcript-label {
-  font-size: 0.8em;
-  color: #666;
-  margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.transcript-text {
-  font-size: 1em;
-  color: #333;
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.confidence {
-  color: #6c757d;
-  font-size: 0.75em;
-}
-
-.last-command {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: #f8f9fa;
-  border-radius: 6px;
-  font-size: 0.9em;
-  color: #555;
-}
-
-.status-message {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  font-size: 0.9em;
-  animation: slideIn 0.3s ease;
-}
-
-.status-success {
-  background: #d4edda;
-  color: #155724;
-  border-left: 4px solid #28a745;
-}
-
-.status-error {
-  background: #f8d7da;
-  color: #721c24;
-  border-left: 4px solid #dc3545;
-}
-
-.status-info {
-  background: #d1ecf1;
-  color: #0c5460;
-  border-left: 4px solid #17a2b8;
-}
-
-.help-box {
-  margin-top: 20px;
-  padding: 15px;
-  background: #f8f9fa;
-  border-radius: 6px;
-  font-size: 0.85em;
-}
-
-details {
-  cursor: pointer;
-}
-
-summary {
-  padding: 5px;
-  user-select: none;
-}
-
-summary:hover {
-  color: #2196f3;
-}
-
-.command-categories {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 15px;
-  margin-top: 15px;
-}
-
-.command-category h4 {
-  margin: 0 0 8px 0;
-  color: #667eea;
-  font-size: 0.95em;
-}
-
-.command-category ul {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.command-category li {
-  margin: 4px 0;
-  color: #555;
-}
-
-.tips {
-  margin-top: 15px;
-  padding-top: 15px;
-  border-top: 1px solid #dee2e6;
-}
-
-.tips ul {
-  margin: 8px 0 0 0;
-  padding-left: 20px;
-}
-
-.tips li {
-  margin: 4px 0;
-  color: #666;
-}
-
-.warning-box {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
-  border-radius: 6px;
-  padding: 12px;
-  color: #856404;
-}
-
-.mock-mode-badge {
-  margin-top: 15px;
-  padding: 8px 12px;
-  background: #fff3e0;
-  border: 1px solid #ff9800;
-  border-radius: 6px;
-  font-size: 0.85em;
-  color: #e65100;
-  text-align: center;
-  font-weight: 600;
-}
+.warn-msg { padding: 10px 13px; background: var(--color-warning-bg); border: 1px solid var(--color-warning-border); border-radius: var(--radius-md); color: var(--color-warning); font-size: 11px; }
 </style>

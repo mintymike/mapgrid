@@ -10,153 +10,82 @@ const selectedSectorSize = ref(mapGridStore.sectorSizeMeters)
 const gridDimensions = computed(() => mapGridStore.gridDimensions)
 const totalSectors = computed(() => mapGridStore.totalSectors)
 
-const updateSectorSize = () => {
-  mapGridStore.setSectorSize(selectedSectorSize.value)
-}
-
-const clearGrid = () => {
-  mapGridStore.clearGrid()
-}
+const updateSectorSize = () => { mapGridStore.setSectorSize(selectedSectorSize.value) }
+const clearGrid = () => { mapGridStore.clearGrid() }
 </script>
 
 <template>
-  <div class="control-panel">
-    <h2>Grid Configuration</h2>
+  <div class="glass-card" style="padding:16px">
+    <div class="glass-section-header">Grid Configuration</div>
 
-    <div class="control-group">
-      <label for="sector-size">Sector Size (meters):</label>
-      <select id="sector-size" v-model="selectedSectorSize" @change="updateSectorSize">
-        <option v-for="size in sectorSizeOptions" :key="size" :value="size">
-          {{ size }}m x {{ size }}m
-        </option>
-      </select>
-    </div>
+    <label class="field-label">Sector Size</label>
+    <select v-model="selectedSectorSize" @change="updateSectorSize" class="glass-select">
+      <option v-for="size in sectorSizeOptions" :key="size" :value="size">
+        {{ size }}m &times; {{ size }}m
+      </option>
+    </select>
 
-    <div class="control-group">
-      <button @click="clearGrid" class="btn-clear">Clear Grid</button>
-    </div>
+    <button @click="clearGrid" class="glass-btn danger" style="width:100%;margin-top:10px">Clear Grid</button>
 
-    <div v-if="totalSectors > 0" class="grid-info">
-      <h3>Grid Information</h3>
-      <div class="info-item">
-        <span class="label">Total Sectors:</span>
-        <span class="value">{{ totalSectors }}</span>
-      </div>
-      <div v-if="gridDimensions" class="info-item">
-        <span class="label">Grid Size:</span>
-        <span class="value">{{ gridDimensions.rows }} rows × {{ gridDimensions.cols }} columns</span>
-      </div>
-      <div class="info-item">
-        <span class="label">Sector Size:</span>
-        <span class="value">{{ selectedSectorSize }}m × {{ selectedSectorSize }}m</span>
+    <div v-if="totalSectors > 0" class="info-section">
+      <div class="glass-divider"></div>
+      <div class="glass-section-header">Grid Info</div>
+      <div class="info-rows">
+        <div class="info-row"><span class="info-label">Sectors</span><span class="info-value">{{ totalSectors.toLocaleString() }}</span></div>
+        <div v-if="gridDimensions" class="info-row"><span class="info-label">Layout</span><span class="info-value">{{ gridDimensions.rows }} &times; {{ gridDimensions.cols }}</span></div>
+        <div class="info-row"><span class="info-label">Cell</span><span class="info-value">{{ selectedSectorSize }}m</span></div>
       </div>
     </div>
 
-    <div v-else class="instruction">
-      <p>Draw a rectangle on the map to create a search grid.</p>
+    <div v-else class="hint-msg">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="10" height="10" rx="2"/></svg>
+      Draw a rectangle on the map to create a search grid
     </div>
   </div>
 </template>
 
 <style scoped>
-.control-panel {
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  max-width: 300px;
-}
-
-h2 {
-  margin-top: 0;
-  margin-bottom: 20px;
-  font-size: 1.2em;
-  color: #333;
-}
-
-h3 {
-  margin-top: 20px;
-  margin-bottom: 10px;
-  font-size: 1em;
-  color: #555;
-}
-
-.control-group {
-  margin-bottom: 15px;
-}
-
-label {
+.field-label {
   display: block;
-  margin-bottom: 5px;
-  font-weight: 600;
-  font-size: 0.9em;
-  color: #555;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
 }
 
-select {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 0.9em;
-  background: white;
-  cursor: pointer;
-}
+.info-section { margin-top: 0; }
 
-select:focus {
-  outline: none;
-  border-color: #3388ff;
+.info-rows {
+  background: var(--layer-bg-0);
+  border: 1px solid var(--layer-bg-2);
+  border-radius: var(--radius-md);
+  padding: 4px 0;
 }
-
-.btn-clear {
-  width: 100%;
-  padding: 10px;
-  background: #ff4444;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.btn-clear:hover {
-  background: #cc0000;
-}
-
-.grid-info {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid #eee;
-}
-
-.info-item {
+.info-row {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 0.9em;
+  align-items: center;
+  padding: 7px 12px;
+  font-size: 13px;
 }
-
-.info-item .label {
-  color: #666;
+.info-row + .info-row {
+  border-top: 1px solid var(--layer-bg-2);
 }
+.info-label { color: var(--color-text-secondary); font-size: 12px; }
+.info-value { font-weight: 600; color: var(--color-text-primary); font-variant-numeric: tabular-nums; font-size: 12px; }
 
-.info-item .value {
-  font-weight: 600;
-  color: #333;
-}
-
-.instruction {
-  margin-top: 20px;
-  padding: 15px;
-  background: #f0f8ff;
-  border-radius: 4px;
-  border-left: 4px solid #3388ff;
-}
-
-.instruction p {
-  margin: 0;
-  font-size: 0.9em;
-  color: #555;
+.hint-msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--color-accent-bg);
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-accent);
+  line-height: 1.5;
 }
 </style>

@@ -71,10 +71,11 @@ onMounted(() => {
     rectangleButton.className = 'maplibregl-ctrl-icon rectangle-draw-btn'
     rectangleButton.innerHTML = '▢'
     rectangleButton.title = 'Draw Rectangle (2 clicks)'
-    rectangleButton.style.cssText = 'font-size: 20px; font-weight: bold;'
+    rectangleButton.style.cssText = 'font-size: 17px; font-weight: 500; color: var(--color-text-secondary);'
 
     const rectangleControl = document.createElement('div')
     rectangleControl.className = 'maplibregl-ctrl maplibregl-ctrl-group'
+    rectangleControl.style.cssText = 'border-radius:8px;overflow:hidden;border:1px solid var(--layer-border-1);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);background:var(--color-glass);'
     rectangleControl.appendChild(rectangleButton)
 
     const topRightControls = map!.getContainer().querySelector('.maplibregl-ctrl-top-right')
@@ -106,8 +107,8 @@ onMounted(() => {
       }
 
       if (rectangleButton) {
-        rectangleButton.style.backgroundColor = rectangleMode ? '#3388ff' : 'white'
-        rectangleButton.style.color = rectangleMode ? 'white' : 'black'
+        rectangleButton.style.backgroundColor = rectangleMode ? 'var(--color-accent-bg)' : 'transparent'
+        rectangleButton.style.color = rectangleMode ? 'var(--color-accent)' : 'var(--color-text-secondary)'
       }
       if (map) {
         map.getCanvas().style.cursor = rectangleMode ? 'crosshair' : ''
@@ -728,7 +729,7 @@ onUnmounted(() => {
   <div class="map-wrapper">
     <div ref="mapContainer" class="map-container"></div>
     <div class="instruction-panel">
-      <strong>📍 Rectangle mode:</strong> Click the ▢ button → Click 2 opposite corners | <strong>Polygon mode:</strong> Click polygon button → Place points → Double-click to finish
+      Click ▢ to draw rectangle (2 opposite corners) or use the polygon tool.
     </div>
   </div>
 </template>
@@ -749,80 +750,84 @@ onUnmounted(() => {
 
 .instruction-panel {
   position: absolute;
-  bottom: 20px;
+  bottom: 14px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(255, 255, 255, 0.95);
-  padding: 12px 20px;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  font-size: 13px;
+  padding: 8px 14px;
+  font-size: 11px;
   z-index: 5;
   pointer-events: none;
-  animation: fadeOut 10s forwards;
+  animation: fade 7s forwards;
+  background: var(--color-glass);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border: 1px solid var(--layer-border-1);
+  color: var(--color-text-secondary);
+  letter-spacing: -0.01em;
 }
 
-@keyframes fadeOut {
-  0%, 70% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
+@keyframes fade {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
-/* Ensure controls are above everything and clickable */
 .map-container :deep(.maplibregl-ctrl-top-right) {
-  margin-top: 10px;
-  margin-right: 10px;
+  margin-top: 12px;
+  margin-right: 12px;
   z-index: 1000 !important;
   position: relative !important;
   pointer-events: auto !important;
 }
 
 .map-container :deep(.maplibregl-ctrl-group) {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  border: 1px solid var(--layer-border-1) !important;
   pointer-events: auto !important;
 }
 
 .map-container :deep(.maplibregl-ctrl button) {
-  background-color: white !important;
+  background-color: var(--color-glass) !important;
   border: none !important;
   cursor: pointer !important;
-  min-width: 30px !important;
-  min-height: 30px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
   pointer-events: auto !important;
+  color: var(--color-text-secondary) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
 }
 
 .map-container :deep(.maplibregl-ctrl button:hover) {
-  background-color: #f0f8ff !important;
+  background-color: var(--layer-bg-3) !important;
+  color: var(--color-text-primary) !important;
 }
 
 .map-container :deep(.maplibregl-ctrl button.active) {
-  background-color: #3388ff !important;
+  background-color: var(--color-accent-bg) !important;
+  color: var(--color-accent) !important;
 }
 
-/* Custom rectangle button */
 .rectangle-draw-btn {
-  width: 30px !important;
-  height: 30px !important;
+  width: 32px !important;
+  height: 32px !important;
   padding: 0 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   border: none !important;
-  background: white !important;
+  background: transparent !important;
   cursor: pointer !important;
-  transition: all 0.2s !important;
+  transition: all 0.12s ease !important;
 }
 
 .rectangle-draw-btn:hover {
-  background-color: #f0f8ff !important;
+  background-color: var(--layer-bg-3) !important;
+  color: var(--color-text-primary) !important;
 }
 </style>
 
 <style>
-/* Global styles for MapLibre Draw controls - not scoped to ensure they apply */
 .maplibregl-ctrl-top-right {
   z-index: 1000 !important;
   pointer-events: auto !important;
