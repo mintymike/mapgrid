@@ -155,7 +155,23 @@ export const useMapGridStore = defineStore('mapGrid', {
     },
 
     generateGrid(area: SearchArea, areaName?: string) {
-      const id = this._ensureActiveArea(areaName)
+      // If active area already has sectors, create a new area
+      const active = this.activeArea
+      if (active && active.sectors.length > 0) {
+        const newId = `area-${++_areaIdCounter}`
+        const label = areaName || `Area ${_areaIdCounter}`
+        this.areas[newId] = { id: newId, name: label, area, sectorSize: this.defaultSectorSize, sectors: [] }
+        this.activeAreaId = newId
+      } else if (!active) {
+        const id = `area-${++_areaIdCounter}`
+        const label = areaName || `Area ${_areaIdCounter}`
+        this.areas[id] = { id, name: label, area, sectorSize: this.defaultSectorSize, sectors: [] }
+        this.activeAreaId = id
+      }
+      // else: active area exists and is empty, update it
+
+      const id = this.activeAreaId
+      if (!id || !this.areas[id]) return
       const areaData = this.areas[id]!
       areaData.area = area
 

@@ -21,7 +21,13 @@ const clearGrid = () => { mapGridStore.clearGrid() }
 
 function addArea() {
   const name = newAreaName.value.trim() || `Area ${areaList.value.length + 1}`
-  mapGridStore._ensureActiveArea(name)
+  // Always create a new fresh area, switch to it
+  const id = `area-${Date.now()}`
+  // Access via pinia's state directly since we need to set up the area
+  mapGridStore.$patch((s) => {
+    s.areas[id] = { id, name, area: { southWest: { lat: 0, lng: 0 }, northEast: { lat: 0, lng: 0 } }, sectorSize: s.defaultSectorSize, sectors: [] }
+    s.activeAreaId = id
+  })
   newAreaName.value = ''
 }
 
@@ -78,7 +84,7 @@ function formatBatteryPct(v: number) { return Math.min(v, 100).toFixed(0) }
             <input v-model="renameValue" @keyup.enter="finishRename" @blur="finishRename" @keyup.escape="renamingId=null" class="rename-input" autofocus />
           </span>
           <span v-else>{{ area.name }}</span>
-          <span class="area-badge">{{ area.sectors.length }} sectors</span>
+          <span class="area-badge">{{ area.sectors.length ? area.sectors.length + ' sectors' : 'empty' }}</span>
         </button>
         <button class="area-menu-btn" @click.stop="renamingId === area.id ? finishRename() : startRename(area.id)" :title="renamingId === area.id ? 'Save' : 'Rename'">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8.5 1.5l2 2L4 10H2V8z"/></svg>
@@ -129,7 +135,8 @@ function formatBatteryPct(v: number) { return Math.min(v, 100).toFixed(0) }
 
     <div v-else class="hint-msg">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="10" height="10" rx="2"/></svg>
-      Draw a rectangle on the map to create a search grid
+      <span v-if="activeAreaId">Draw a rectangle to populate this area. Each new rectangle creates a new area.</span>
+      <span v-else>Add an area above, then draw a rectangle on the map.</span>
     </div>
   </div>
 </template>
