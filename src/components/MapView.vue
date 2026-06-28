@@ -257,6 +257,19 @@ onMounted(() => {
       },
       minzoom: 14
     })
+
+    // Inactive area outlines (all other areas)
+    map!.addSource('inactive-areas', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+    map!.addLayer({
+      id: 'inactive-areas-outline',
+      type: 'line',
+      source: 'inactive-areas',
+      paint: {
+        'line-color': 'rgba(200,200,200,0.25)',
+        'line-width': 1,
+        'line-dasharray': [3, 3],
+      }
+    })
   })
 
   // Handle rectangle creation
@@ -432,8 +445,18 @@ onMounted(() => {
     () => mapGridStore.sectors,
     (newSectors) => {
       updateSectorsLayer(newSectors)
+      updateInactiveAreasLayer()
     },
     { immediate: true }
+  )
+
+  // Watch for active area changes
+  watch(
+    () => mapGridStore.activeAreaId,
+    () => {
+      updateSectorsLayer(mapGridStore.sectors)
+      updateInactiveAreasLayer()
+    }
   )
 
   // Watch for selected sector
@@ -608,6 +631,34 @@ function updateSectorsLayer(sectors: any[]) {
   if (source) {
     source.setData(geojson)
   }
+}
+
+function updateInactiveAreasLayer() {
+  if (!map) return
+  const source = map.getSource('inactive-areas') as maplibregl.GeoJSONSource
+  if (!source) return
+  const activeId = mapGridStore.activeAreaId
+  const features: Feature<Polygon>[] = []
+  for (const area of mapGridStore.areaList) {
+    if (area.id === activeId) continue
+    for (const sector of area.sectors) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[
+            [sector.bounds.southWest.lng, sector.bounds.southWest.lat],
+            [sector.bounds.northEast.lng, sector.bounds.southWest.lat],
+            [sector.bounds.northEast.lng, sector.bounds.northEast.lat],
+            [sector.bounds.southWest.lng, sector.bounds.northEast.lat],
+            [sector.bounds.southWest.lng, sector.bounds.southWest.lat],
+          ]]
+        },
+        properties: { label: sector.label, area: area.name }
+      })
+    }
+  }
+  source.setData({ type: 'FeatureCollection', features })
 }
 
 function updateSelectedSector(selectedLabel: string | null, oldLabel: string | null) {

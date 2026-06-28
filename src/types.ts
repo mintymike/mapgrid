@@ -8,6 +8,22 @@ export interface SearchArea {
   northEast: LatLng
 }
 
+export interface SearchAreaData {
+  id: string
+  name: string
+  area: SearchArea
+  sectorSize: number
+  sectors: Sector[]
+}
+
+export interface BatteryEstimate {
+  totalSectors: number
+  sectorsCoverable: number
+  coveragePercent: number
+  flightTimeRemaining: number
+  avgTimePerSector: number
+}
+
 export type SectorStatus = 'unsearched' | 'clear' | 'target-found' | 'obstructed' | 're-search'
 
 export interface Sector {

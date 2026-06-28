@@ -3,16 +3,17 @@ import type {
   Sector, SectorStatus, DronePosition, SearchPatternType,
   SearchPath, SearchPatternOptions, SearchArea, LatLng,
   GridDimensions, MissionLogEntry, MissionLogAction,
+  SearchAreaData, BatteryEstimate,
 } from '@/types'
 
 let _logId = 0
+let _areaIdCounter = 0
 
 export const useMapGridStore = defineStore('mapGrid', {
   state: () => ({
-    sectors: [] as Sector[],
+    areas: {} as Record<string, SearchAreaData>,
+    activeAreaId: null as string | null,
     dronePosition: null as DronePosition | null,
-    sectorSizeMeters: 20,
-    searchArea: null as SearchArea | null,
     selectedSector: null as string | null,
     droneSpeed: 5,
     isFlying: false,
@@ -23,32 +24,107 @@ export const useMapGridStore = defineStore('mapGrid', {
     currentWaypointIndex: 0,
     sectorStatuses: {} as Record<string, SectorStatus>,
     missionLog: [] as MissionLogEntry[],
+    batteryFlightTimeMinutes: 25,
+    defaultSectorSize: 20,
   }),
 
   getters: {
-    getSectorByLabel: (state) => (label: string): Sector | undefined =>
-      state.sectors.find((s) => s.label === label),
+    activeArea(): SearchAreaData | null {
+      return this.activeAreaId && this.areas[this.activeAreaId] ? this.areas[this.activeAreaId]! : null
+    },
 
-    totalSectors: (state): number => state.sectors.length,
+    areaList(): SearchAreaData[] {
+      return Object.values(this.areas)
+    },
 
-    gridDimensions: (state): GridDimensions | null => {
-      if (state.sectors.length === 0) return null
+    sectors(): Sector[] {
+      return this.activeArea?.sectors ?? []
+    },
+
+    searchArea(): SearchArea | null {
+      return this.activeArea?.area ?? null
+    },
+
+    sectorSizeMeters(): number {
+      return this.activeArea?.sectorSize ?? this.defaultSectorSize
+    },
+
+    getSectorByLabel: () => {
+      return (label: string): Sector | undefined => {
+        const store = useMapGridStore()
+        return store.sectors.find((s) => s.label === label)
+      }
+    },
+
+    totalSectors(): number {
+      return this.sectors.length
+    },
+
+    gridDimensions(): GridDimensions | null {
+      if (this.sectors.length === 0) return null
       const rows = new Set<string>()
       const cols = new Set<string>()
-      state.sectors.forEach((s) => {
+      this.sectors.forEach((s) => {
         const m = s.label.match(/^([A-Z]+)(\d+)$/)
         if (m?.[1] && m?.[2]) { cols.add(m[1]); rows.add(m[2]) }
       })
       return { rows: rows.size, cols: cols.size }
     },
 
-    getSectorStatus: (state) => (label: string): SectorStatus =>
-      state.sectorStatuses[label] || 'unsearched',
+    getSectorStatus: (state): (label: string) => SectorStatus =>
+      (label: string) => state.sectorStatuses[label] ?? 'unsearched',
 
-    recentMissionLog: (state) => state.missionLog.slice(-100),
+    recentMissionLog: (state): MissionLogEntry[] => state.missionLog.slice(-100),
+
+    batteryEstimate(): BatteryEstimate | null {
+      const sects = this.sectors
+      if (!sects.length || !this.droneSpeed) return null
+      const ss = this.sectorSizeMeters
+      const diag = Math.sqrt(2) * ss
+      const timePerSector = diag / this.droneSpeed
+      const sectorsCoverable = Math.floor(this.batteryFlightTimeMinutes * 60 / Math.max(timePerSector, 1))
+      return {
+        totalSectors: sects.length,
+        sectorsCoverable,
+        coveragePercent: sects.length > 0 ? Math.min((sectorsCoverable / sects.length) * 100, 100) : 100,
+        flightTimeRemaining: this.batteryFlightTimeMinutes,
+        avgTimePerSector: timePerSector,
+      }
+    },
   },
 
   actions: {
+    _ensureActiveArea(name?: string): string {
+      if (this.activeAreaId && this.areas[this.activeAreaId]) return this.activeAreaId
+      const id = `area-${++_areaIdCounter}`
+      const label = name || `Area ${_areaIdCounter}`
+      this.areas[id] = { id, name: label, area: { southWest: { lat: 0, lng: 0 }, northEast: { lat: 0, lng: 0 } }, sectorSize: this.defaultSectorSize, sectors: [] }
+      this.activeAreaId = id
+      return id
+    },
+
+    switchArea(id: string) {
+      if (this.areas[id]) {
+        this.activeAreaId = id
+        this.selectedSector = null
+      }
+    },
+
+    renameArea(id: string, name: string) {
+      if (this.areas[id]) {
+        this.areas[id].name = name
+      }
+    },
+
+    deleteArea(id: string) {
+      if (!this.areas[id]) return
+      delete this.areas[id]
+      if (this.activeAreaId === id) {
+        const remaining = Object.keys(this.areas)
+        this.activeAreaId = remaining.length > 0 ? (remaining[0] ?? null) : null
+      }
+    },
+
     log(action: MissionLogAction, detail: string, data?: Record<string, unknown>) {
       this.missionLog.push({ id: ++_logId, timestamp: new Date(), action, detail, data })
       if (this.missionLog.length > 500) this.missionLog.splice(0, this.missionLog.length - 500)
@@ -59,28 +135,32 @@ export const useMapGridStore = defineStore('mapGrid', {
     },
 
     setSectorSize(sizeMeters: number) {
-      this.sectorSizeMeters = sizeMeters
-      if (this.searchArea) this.generateGrid(this.searchArea)
+      const area = this.activeArea
+      if (area) {
+        area.sectorSize = sizeMeters
+        this.generateGrid(area.area)
+      }
     },
 
-    selectSector(label: string) {
-      this.selectedSector = label
-    },
+    selectSector(label: string) { this.selectedSector = label },
 
     setSectorStatus(label: string, status: SectorStatus) {
       this.sectorStatuses[label] = status
-      const sector = this.getSectorByLabel(label)
-      if (sector) { sector.status = status }
+      const area = this.activeArea
+      if (area) {
+        const s = area.sectors.find(s => s.label === label)
+        if (s) s.status = status
+      }
       this.log('sector-status-changed', `Sector ${label}: ${status}`, { label, status })
     },
 
-    generateGrid(area: SearchArea) {
-      this.searchArea = area
-      this.sectors = []
-      this.sectorStatuses = {}
+    generateGrid(area: SearchArea, areaName?: string) {
+      const id = this._ensureActiveArea(areaName)
+      const areaData = this.areas[id]!
+      areaData.area = area
 
       const { southWest, northEast } = area
-      const s = this.sectorSizeMeters
+      const s = areaData.sectorSize
 
       const metersPerDegreeLat = 111320
       const metersPerDegreeLng = 111320 * Math.cos((southWest.lat * Math.PI) / 180)
@@ -105,17 +185,12 @@ export const useMapGridStore = defineStore('mapGrid', {
           const nw = { lat: northEast.lat - row * latDelta, lng: southWest.lng + col * lngDelta }
           const se = { lat: northEast.lat - (row + 1) * latDelta, lng: southWest.lng + (col + 1) * lngDelta }
           const center = { lat: (nw.lat + se.lat) / 2, lng: (nw.lng + se.lng) / 2 }
-          sectors.push({
-            label: `${colLabel}${rowLabel}`,
-            bounds: { southWest: se, northEast: nw },
-            center,
-            status: 'unsearched',
-          })
+          sectors.push({ label: `${colLabel}${rowLabel}`, bounds: { southWest: se, northEast: nw }, center, status: 'unsearched' })
         }
       }
 
-      this.sectors = sectors
-      this.log('grid-generated', `${totalSectors} sectors, ${s}m cells, ${numRows}x${numCols}`, { totalSectors, sectorSize: s, rows: numRows, cols: numCols })
+      areaData.sectors = sectors
+      this.log('grid-generated', `${areaData.name}: ${totalSectors} sectors, ${s}m cells, ${numRows}x${numCols}`, { totalSectors, sectorSize: s, area: areaData.name })
     },
 
     getRowLabel(index: number): string {
@@ -126,10 +201,12 @@ export const useMapGridStore = defineStore('mapGrid', {
     },
 
     clearGrid() {
-      this.sectors = []
-      this.searchArea = null
+      const area = this.activeArea
+      if (area) {
+        area.sectors = []
+        area.area = { southWest: { lat: 0, lng: 0 }, northEast: { lat: 0, lng: 0 } }
+      }
       this.selectedSector = null
-      this.sectorStatuses = {}
       this.log('grid-cleared', 'Search grid cleared')
     },
 
@@ -141,19 +218,17 @@ export const useMapGridStore = defineStore('mapGrid', {
     },
 
     flyToSector(label: string): LatLng | null {
-      const sector = this.getSectorByLabel(label)
+      const area = this.activeArea
+      const sector = area?.sectors.find(s => s.label === label)
       if (sector) { this.selectedSector = label; return sector.center }
       return null
     },
 
-    setDroneSpeed(speedMps: number) {
-      this.droneSpeed = speedMps
-    },
+    setDroneSpeed(speedMps: number) { this.droneSpeed = speedMps },
 
     setDronePosition(lat: number, lng: number) {
       this.dronePosition = { lat, lng, altitude: this.dronePosition?.altitude || 0, heading: this.dronePosition?.heading || 0, speed: 0, timestamp: new Date() }
-      this.isFlying = false
-      this.targetPosition = null
+      this.isFlying = false; this.targetPosition = null
       this.log('position-set', `Drone position set to ${lat.toFixed(6)}, ${lng.toFixed(6)}`, { lat, lng })
     },
 
@@ -161,8 +236,7 @@ export const useMapGridStore = defineStore('mapGrid', {
     stopFlying() { this.isFlying = false; this.targetPosition = null },
 
     startSearchPattern(pattern: SearchPatternType, options: SearchPatternOptions) {
-      this.searchedSectors.clear()
-      this.currentWaypointIndex = 0
+      this.searchedSectors.clear(); this.currentWaypointIndex = 0
       this.searchPath = this.generateSearchPath(pattern, options)
       this.searchPatternActive = true
       this.log('search-started', `Pattern: ${pattern}`, { pattern, options })
@@ -192,21 +266,19 @@ export const useMapGridStore = defineStore('mapGrid', {
 
     generateExpandingSquarePath(centerLabel?: string): SearchPath {
       const w: LatLng[] = [], l: string[] = [], visited = new Set<string>()
-      let center = centerLabel ? this.getSectorByLabel(centerLabel.toUpperCase()) : undefined
+      let center = centerLabel ? this.sectors.find(s => s.label === centerLabel.toUpperCase()) : undefined
       if (!center && this.sectors.length > 0) center = this.sectors[Math.floor(this.sectors.length / 2)]
       if (!center) return { waypoints: [], sectors: [] }
       w.push(center.center); l.push(center.label); visited.add(center.label)
-
       let layer = 1, found = true
       while (found) {
-        found = false
-        const layerSectors: Sector[] = []
+        found = false; const layerSectors: Sector[] = []
         this.sectors.forEach((s) => {
           if (visited.has(s.label)) return
           const cm = center!.label.match(/^([A-Z]+)(\d+)$/), sm = s.label.match(/^([A-Z]+)(\d+)$/)
           if (!cm?.[1] || !cm?.[2] || !sm?.[1] || !sm?.[2]) return
-          const distance = Math.max(Math.abs(this.columnToNumber(sm[1]) - this.columnToNumber(cm[1])), Math.abs(parseInt(sm[2]) - parseInt(cm[2])))
-          if (distance === layer) { layerSectors.push(s); found = true }
+          const d = Math.max(Math.abs(this.columnToNumber(sm[1]) - this.columnToNumber(cm[1])), Math.abs(parseInt(sm[2]) - parseInt(cm[2])))
+          if (d === layer) { layerSectors.push(s); found = true }
         })
         layerSectors.forEach((s) => { w.push(s.center); l.push(s.label); visited.add(s.label) })
         layer++
@@ -223,10 +295,10 @@ export const useMapGridStore = defineStore('mapGrid', {
       })
       const cols = Array.from(allCols).sort(), rows = Array.from(allRows).sort((a, b) => a - b)
       if (rows.length > 0 && cols.length > 0) {
-        for (const col of cols) { const label = `${col}${rows[0]}`; const s = this.getSectorByLabel(label); if (s && !visited.has(label)) { w.push(s.center); l.push(label); visited.add(label) } }
-        for (let i = 1; i < rows.length; i++) { const label = `${cols[cols.length - 1]}${rows[i]}`; const s = this.getSectorByLabel(label); if (s && !visited.has(label)) { w.push(s.center); l.push(label); visited.add(label) } }
-        if (rows.length > 1) for (let i = cols.length - 2; i >= 0; i--) { const label = `${cols[i]}${rows[rows.length - 1]}`; const s = this.getSectorByLabel(label); if (s && !visited.has(label)) { w.push(s.center); l.push(label); visited.add(label) } }
-        if (cols.length > 1) for (let i = rows.length - 2; i > 0; i--) { const label = `${cols[0]}${rows[i]}`; const s = this.getSectorByLabel(label); if (s && !visited.has(label)) { w.push(s.center); l.push(label); visited.add(label) } }
+        for (const col of cols) { const lbl = `${col}${rows[0]}`; const s = this.sectors.find(s => s.label === lbl); if (s && !visited.has(lbl)) { w.push(s.center); l.push(lbl); visited.add(lbl) } }
+        for (let i = 1; i < rows.length; i++) { const lbl = `${cols[cols.length - 1]}${rows[i]}`; const s = this.sectors.find(s => s.label === lbl); if (s && !visited.has(lbl)) { w.push(s.center); l.push(lbl); visited.add(lbl) } }
+        if (rows.length > 1) for (let i = cols.length - 2; i >= 0; i--) { const lbl = `${cols[i]}${rows[rows.length - 1]}`; const s = this.sectors.find(s => s.label === lbl); if (s && !visited.has(lbl)) { w.push(s.center); l.push(lbl); visited.add(lbl) } }
+        if (cols.length > 1) for (let i = rows.length - 2; i > 0; i--) { const lbl = `${cols[0]}${rows[i]}`; const s = this.sectors.find(s => s.label === lbl); if (s && !visited.has(lbl)) { w.push(s.center); l.push(lbl); visited.add(lbl) } }
       }
       this.sectors.forEach((s) => { if (!visited.has(s.label)) { w.push(s.center); l.push(s.label) } })
       return { waypoints: w, sectors: l }
